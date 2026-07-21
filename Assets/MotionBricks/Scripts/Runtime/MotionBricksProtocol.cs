@@ -14,6 +14,10 @@ namespace MotionBricks.Unity
         [JsonProperty("move_y")] public float MoveY;
         [JsonProperty("look_yaw")] public float LookYaw;
         [JsonProperty("style")] public string Style = "default";
+        // Optional fixed navigation goal. Omitted/false retains the original WASD protocol.
+        [JsonProperty("has_target")] public bool HasTarget;
+        [JsonProperty("target_position")] public float[] TargetPosition;
+        [JsonProperty("target_yaw")] public float TargetYaw;
     }
 
     [Serializable]
@@ -25,6 +29,10 @@ namespace MotionBricks.Unity
         [JsonProperty("root_position")] public float[] RootPosition;
         [JsonProperty("root_rotation")] public float[] RootRotation;
         [JsonProperty("joints")] public Dictionary<string, float[]> Joints;
+        [JsonProperty("plan_root_positions")] public float[][] PlanRootPositions;
+        [JsonProperty("goal_root_position")] public float[] GoalRootPosition;
+        [JsonProperty("goal_root_rotation")] public float[] GoalRootRotation;
+        [JsonProperty("goal_joints")] public Dictionary<string, float[]> GoalJoints;
 
         public bool IsPose => string.Equals(Type, "pose", StringComparison.Ordinal);
 
@@ -39,6 +47,20 @@ namespace MotionBricks.Unity
         {
             return RootRotation is { Length: >= 4 }
                 ? new Quaternion(RootRotation[0], RootRotation[1], RootRotation[2], RootRotation[3])
+                : Quaternion.identity;
+        }
+
+        public Vector3 GetGoalRootPosition()
+        {
+            return GoalRootPosition is { Length: >= 3 }
+                ? new Vector3(GoalRootPosition[0], GoalRootPosition[1], GoalRootPosition[2])
+                : Vector3.zero;
+        }
+
+        public Quaternion GetGoalRootRotation()
+        {
+            return GoalRootRotation is { Length: >= 4 }
+                ? new Quaternion(GoalRootRotation[0], GoalRootRotation[1], GoalRootRotation[2], GoalRootRotation[3])
                 : Quaternion.identity;
         }
 

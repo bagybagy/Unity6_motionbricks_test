@@ -24,6 +24,8 @@ namespace MotionBricks.Unity
 
         [Header("Scene")]
         [SerializeField] private MotionBricksRigDriver rigDriver;
+        [SerializeField] private MotionBricksTargetController targetController;
+        [SerializeField] private MotionBricksTargetVisualizer targetVisualizer;
         [SerializeField] private bool showDebugOverlay = true;
 
         private readonly ConcurrentQueue<PoseMessage> receivedPoses = new();
@@ -46,6 +48,12 @@ namespace MotionBricks.Unity
         {
             if (rigDriver == null)
                 rigDriver = GetComponent<MotionBricksRigDriver>();
+            // These are added here so the existing generated demo scene gains goal controls
+            // without requiring a scene migration.
+            targetController ??= GetComponent<MotionBricksTargetController>();
+            targetController ??= gameObject.AddComponent<MotionBricksTargetController>();
+            targetVisualizer ??= GetComponent<MotionBricksTargetVisualizer>();
+            targetVisualizer ??= gameObject.AddComponent<MotionBricksTargetVisualizer>();
         }
 
         private void OnEnable() => StartTransport();
@@ -54,6 +62,7 @@ namespace MotionBricks.Unity
 
         private void Update()
         {
+            UpdateStyleShortcuts();
             if (Time.unscaledTime >= nextControlTime)
             {
                 SendControls();
@@ -67,7 +76,21 @@ namespace MotionBricks.Unity
             {
                 lastPoseTimestamp = newest.Timestamp;
                 rigDriver?.Apply(newest);
+                targetVisualizer?.Apply(newest);
             }
+        }
+
+        private void UpdateStyleShortcuts()
+        {
+            if (Input.GetKeyDown(KeyCode.Alpha1)) style = "default";
+            else if (Input.GetKeyDown(KeyCode.Alpha2)) style = "slow";
+            else if (Input.GetKeyDown(KeyCode.Alpha3)) style = "zombie";
+            else if (Input.GetKeyDown(KeyCode.Alpha4)) style = "injured";
+            else if (Input.GetKeyDown(KeyCode.Alpha5)) style = "stealth";
+            else if (Input.GetKeyDown(KeyCode.Alpha6)) style = "crouch";
+            else if (Input.GetKeyDown(KeyCode.Alpha7)) style = "happy";
+            else if (Input.GetKeyDown(KeyCode.Alpha8)) style = "gun";
+            else if (Input.GetKeyDown(KeyCode.Alpha9)) style = "scared";
         }
 
         private void StartTransport()
@@ -105,15 +128,7 @@ namespace MotionBricks.Unity
         {
             if (sender == null || remoteEndpoint == null)
                 return;
-            accumulatedLookYaw += Input.GetAxisRaw("Mouse X") * lookSensitivity;
-            var message = new ControlMessage
-            {
-                Sequence = Interlocked.Increment(ref controlSequence),
-                MoveX = Input.GetAxisRaw("Horizontal"),
-                MoveY = Input.GetAxisRaw("Vertical"),
-                LookYaw = accumulatedLookYaw,
-                Style = string.IsNullOrWhiteSpace(style) ? "default" : style,
-            };
+            var message = CreateControlMessage();
             try
             {
                 var bytes = Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(message));
@@ -123,6 +138,30 @@ namespace MotionBricks.Unity
             {
                 lastReceiveError = exception.Message;
             }
+        }
+
+        /// <summary>Creates the outgoing message. Exposed to keep protocol behavior testable.</summary>
+        public ControlMessage CreateControlMessage()
+        {
+            // EditMode callers (including tests and inspector tooling) must not invoke the
+            // legacy input backend. Runtime input remains exactly as before.
+            var mouseX = Application.isPlaying ? Input.GetAxisRaw("Mouse X") : 0f;
+            var horizontal = Application.isPlaying ? Input.GetAxisRaw("Horizontal") : 0f;
+            var vertical = Application.isPlaying ? Input.GetAxisRaw("Vertical") : 0f;
+            accumulatedLookYaw += mouseX * lookSensitivity;
+            var hasTarget = targetController != null && targetController.HasTarget;
+            return new ControlMessage
+            {
+                Sequence = Interlocked.Increment(ref controlSequence),
+                // Direct controls remain available until a user has placed a fixed target.
+                MoveX = hasTarget ? 0f : horizontal,
+                MoveY = hasTarget ? 0f : vertical,
+                LookYaw = accumulatedLookYaw,
+                Style = string.IsNullOrWhiteSpace(style) ? "default" : style,
+                HasTarget = hasTarget,
+                TargetPosition = hasTarget ? targetController.TargetPositionArray : null,
+                TargetYaw = hasTarget ? targetController.TargetYaw : 0f,
+            };
         }
 
         private async Task ReceiveLoopAsync(CancellationToken token)
@@ -155,10 +194,13 @@ namespace MotionBricks.Unity
             if (!showDebugOverlay)
                 return;
             var status = IsRunning ? "Listening" : "Stopped";
-            GUI.Box(new Rect(12, 12, 330, 94), "MotionBricks UDP bridge");
+            GUI.Box(new Rect(12, 12, 520, 116), "MotionBricks UDP bridge");
             GUI.Label(new Rect(22, 38, 310, 20), $"{status}: controls {bridgeHost}:{controlPort}, poses :{posePort}");
-            GUI.Label(new Rect(22, 58, 310, 20), $"WASD: move | Mouse X: yaw | poses: {ReceivedPoseCount}");
-            GUI.Label(new Rect(22, 78, 310, 20), string.IsNullOrEmpty(lastReceiveError)
+            GUI.Label(new Rect(22, 58, 500, 20), targetController != null && targetController.HasTarget
+                ? "Target: WASD adjust | Q/E yaw | Esc clears target"
+                : "Click ground: set target | WASD: direct move | Mouse X: yaw");
+            GUI.Label(new Rect(22, 78, 500, 20), $"Style: {style} | 1 default, 2 slow, 3 zombie, 4 injured, 5 stealth, 6-9 more");
+            GUI.Label(new Rect(22, 98, 400, 20), string.IsNullOrEmpty(lastReceiveError)
                 ? $"Last pose timestamp: {lastPoseTimestamp:F3}"
                 : $"UDP: {lastReceiveError}");
         }

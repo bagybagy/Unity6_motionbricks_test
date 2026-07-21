@@ -18,6 +18,8 @@ from motionbridge.pose_conversion import (
     mujoco_axis_to_unity,
     mujoco_position_to_unity,
     mujoco_root_quaternion_to_unity,
+    unity_position_to_mujoco,
+    unity_yaw_to_mujoco_heading,
 )
 from motionbridge.protocol import ControlMessage, PoseMessage, decode_control, encode_pose
 
@@ -46,6 +48,10 @@ STYLE_ALIASES = {
     "scared": "walk_scared",
     "walk_scared": "walk_scared",
 }
+
+ARRIVAL_DISTANCE_METERS = 0.18
+PLAN_SAMPLE_COUNT = 12
+TARGET_CHANGE_DEBOUNCE_SECONDS = 0.15
 
 
 @dataclass(frozen=True, slots=True)
@@ -116,6 +122,11 @@ class MotionBricksRuntime:
         self.demo.full_agent.reset()
         self.joints = self._joint_specs()
         self.sequence = 0
+        self._last_target: tuple[float, float, float, float] | None = None
+        self._last_mode: int | None = None
+        self._last_target_arrived = True
+        self._pending_target: tuple[float, float, float, float] | None = None
+        self._pending_target_since = 0.0
 
     @property
     def fps(self) -> float:
@@ -152,43 +163,152 @@ class MotionBricksRuntime:
             movement = (0.0, 0.0, 0.0)
         facing = (cos_yaw, -sin_yaw, 0.0)
 
+        target_position = None
+        target_arrived = False
+        if control.has_target:
+            target_position = unity_position_to_mujoco(control.target_position)
+            delta_x = target_position[0] - float(self.demo.mj_data.qpos[0])
+            delta_y = target_position[1] - float(self.demo.mj_data.qpos[1])
+            distance = math.hypot(delta_x, delta_y)
+            if distance > 1e-5:
+                movement = (delta_x / distance, delta_y / distance, 0.0)
+            else:
+                movement = (0.0, 0.0, 0.0)
+            target_heading = unity_yaw_to_mujoco_heading(control.target_yaw)
+            facing = (math.cos(target_heading), math.sin(target_heading), 0.0)
+            target_arrived = distance <= ARRIVAL_DISTANCE_METERS
+            magnitude = 0.0 if target_arrived else 1.0
+
         requested = STYLE_ALIASES.get(control.style.lower(), control.style.lower())
-        if requested == "walk" and magnitude <= 1e-5:
+        if target_arrived:
+            # The goal condition is complete regardless of the selected
+            # locomotion style, so keep a stable terminal idle pose.
+            movement = (0.0, 0.0, 0.0)
+            requested = "idle"
+        elif requested == "walk" and magnitude <= 1e-5:
             requested = "idle"
         if requested not in self.clip_names:
             requested = "walk" if magnitude > 1e-5 else "idle"
         mode = self.clip_names.index(requested)
+        self._current_target_arrived = target_arrived
+        self._current_mode = mode
 
         torch = self.torch
-        return {
+        signals = {
             "movement_direction": torch.tensor([movement], dtype=torch.float32),
             "facing_direction": torch.tensor([facing], dtype=torch.float32),
             "mode": torch.tensor([[mode]], dtype=torch.int64),
             "allowed_pred_num_tokens": self.demo.controller.get_default_allowed_pred_num_tokens(mode),
             "context_mujoco_qpos": self.demo.full_agent.get_context_mujoco_qpos(),
         }
+        if target_position is not None:
+            # MotionBricks expects global MuJoCo coordinates for all four
+            # target-token frames; full_agent canonicalizes them internally.
+            signals["specific_target_positions"] = torch.tensor(
+                [[target_position] * 4], dtype=torch.float32
+            )
+            signals["specific_target_headings"] = torch.full(
+                (1, 4), target_heading, dtype=torch.float32
+            )
+            signals["has_specific_target"] = torch.ones((1, 1), dtype=torch.int32)
+        return signals
+
+    def _joint_rotations(self, qpos: Sequence[float]) -> dict[str, tuple[float, float, float, float]]:
+        return {
+            spec.name: axis_angle_to_quaternion(spec.unity_axis, qpos[spec.qpos_address])
+            for spec in self.joints
+        }
+
+    def _generated_plan(self) -> tuple[tuple[tuple[float, ...], ...], Sequence[float]]:
+        """Return a compact Unity-space preview and the generated terminal qpos."""
+        frames = self.demo.full_agent.frames["mujoco_qpos"][0]
+        if hasattr(frames, "detach"):
+            frames = frames.detach()
+        if hasattr(frames, "cpu"):
+            frames = frames.cpu()
+        if hasattr(frames, "numpy"):
+            frames = frames.numpy()
+        count = len(frames)
+        if count == 0:
+            raise RuntimeError("MotionBricks generated an empty qpos buffer")
+        start_index = max(0, min(int(self.demo.full_agent._current_frame_idx), count - 1))
+        future_frames = frames[start_index:]
+        sample_count = min(len(future_frames), PLAN_SAMPLE_COUNT)
+        indices = [round(index * (len(future_frames) - 1) / max(sample_count - 1, 1))
+                   for index in range(sample_count)]
+        plan = tuple(mujoco_position_to_unity(future_frames[index][0:3]) for index in indices)
+        return plan, future_frames[-1]
+
+    def _should_force_generation(
+        self,
+        control: ControlMessage,
+        target_key: tuple[float, float, float, float] | None,
+        now: float,
+    ) -> bool:
+        """Force a settled target once, without replanning for every held key event."""
+        if not control.has_target:
+            self._pending_target = None
+            return False
+
+        idle_mode = self.clip_names.index("idle")
+        eligible = (
+            self._last_mode is None
+            or self._last_target_arrived
+            or self._last_mode == idle_mode
+        )
+        if not eligible:
+            self._pending_target = None
+            return False
+        if self._last_target is None:
+            self._pending_target = None
+            return True
+
+        if target_key != self._last_target:
+            self._pending_target = target_key
+            self._pending_target_since = now
+            return False
+        if (
+            self._pending_target == target_key
+            and now - self._pending_target_since >= TARGET_CHANGE_DEBOUNCE_SECONDS
+        ):
+            self._pending_target = None
+            return True
+        return False
 
     def next_pose(self, control: ControlMessage) -> PoseMessage:
         qpos = self.demo.full_agent.get_next_frame()
         self.demo.mj_data.qpos[:] = qpos
         signals = self._control_signals(control)
+        target_key = (*control.target_position, control.target_yaw) if control.has_target else None
+        # full_agent intentionally skips idle-to-idle replans. New goals start
+        # immediately, while held-key target edits are regenerated once after
+        # they settle instead of triggering expensive inference at 30 Hz.
+        force_generation = self._should_force_generation(
+            control, target_key, time.monotonic()
+        )
         with self.torch.no_grad():
             self.demo.full_agent.generate_new_frames(
                 signals,
                 self.demo.controller.get_controller_dt() * self.args.generate_dt,
+                force_generation=force_generation,
             )
+        self._last_target = target_key
+        self._last_target_arrived = self._current_target_arrived
+        self._last_mode = self._current_mode
+
+        plan_root_positions, goal_qpos = self._generated_plan()
 
         self.sequence += 1
-        joints = {
-            spec.name: axis_angle_to_quaternion(spec.unity_axis, qpos[spec.qpos_address])
-            for spec in self.joints
-        }
         return PoseMessage(
             seq=self.sequence,
             timestamp=time.monotonic(),
             root_position=mujoco_position_to_unity(qpos[0:3]),
             root_rotation=mujoco_root_quaternion_to_unity(qpos[3:7]),
-            joints=joints,
+            joints=self._joint_rotations(qpos),
+            plan_root_positions=plan_root_positions,
+            goal_root_position=mujoco_position_to_unity(goal_qpos[0:3]),
+            goal_root_rotation=mujoco_root_quaternion_to_unity(goal_qpos[3:7]),
+            goal_joints=self._joint_rotations(goal_qpos),
         )
 
 

@@ -6,6 +6,7 @@ import argparse
 import math
 import socket
 import time
+from dataclasses import dataclass, field
 
 from motionbridge.protocol import ControlMessage, PoseMessage, decode_control, encode_pose
 
@@ -16,28 +17,79 @@ def _axis_angle(axis: tuple[float, float, float], angle: float) -> tuple[float, 
     return axis[0] * scale, axis[1] * scale, axis[2] * scale, math.cos(half)
 
 
-def _mock_pose(control: ControlMessage, now: float, seq: int) -> PoseMessage:
-    speed = min(1.0, math.hypot(control.move_x, control.move_y))
-    phase = now * (2.0 + speed * 5.0)
+def _joints(phase: float, speed: float) -> dict[str, tuple[float, float, float, float]]:
     stride = math.sin(phase) * speed * 0.45
     knee = max(0.0, math.sin(phase)) * speed * 0.7
     opposite_knee = max(0.0, -math.sin(phase)) * speed * 0.7
-    yaw = math.radians(control.look_yaw)
+    return {
+        "left_hip_pitch_joint": _axis_angle((1.0, 0.0, 0.0), stride),
+        "right_hip_pitch_joint": _axis_angle((1.0, 0.0, 0.0), -stride),
+        "left_knee_joint": _axis_angle((1.0, 0.0, 0.0), knee),
+        "right_knee_joint": _axis_angle((1.0, 0.0, 0.0), opposite_knee),
+        "left_shoulder_pitch_joint": _axis_angle((1.0, 0.0, 0.0), -stride * 0.7),
+        "right_shoulder_pitch_joint": _axis_angle((1.0, 0.0, 0.0), stride * 0.7),
+    }
 
-    return PoseMessage(
-        seq=seq,
-        timestamp=now,
-        root_position=(control.move_x * 0.1, 1.0, control.move_y * 0.1),
-        root_rotation=_axis_angle((0.0, 1.0, 0.0), yaw),
-        joints={
-            "left_hip_pitch_joint": _axis_angle((1.0, 0.0, 0.0), stride),
-            "right_hip_pitch_joint": _axis_angle((1.0, 0.0, 0.0), -stride),
-            "left_knee_joint": _axis_angle((1.0, 0.0, 0.0), knee),
-            "right_knee_joint": _axis_angle((1.0, 0.0, 0.0), opposite_knee),
-            "left_shoulder_pitch_joint": _axis_angle((1.0, 0.0, 0.0), -stride * 0.7),
-            "right_shoulder_pitch_joint": _axis_angle((1.0, 0.0, 0.0), stride * 0.7),
-        },
-    )
+
+@dataclass
+class MockRuntime:
+    root_position: list[float] = field(default_factory=lambda: [0.0, 1.0, 0.0])
+    last_timestamp: float | None = None
+
+    def next_pose(self, control: ControlMessage, now: float, seq: int) -> PoseMessage:
+        dt = min(max(0.0, now - self.last_timestamp), 0.1) if self.last_timestamp else 1.0 / 60.0
+        self.last_timestamp = now
+        target = control.target_position if control.has_target else None
+        if target is not None:
+            dx, dz = target[0] - self.root_position[0], target[2] - self.root_position[2]
+            distance = math.hypot(dx, dz)
+            step = min(distance, 1.4 * dt)
+            if distance > 1e-5:
+                self.root_position[0] += dx / distance * step
+                self.root_position[2] += dz / distance * step
+            yaw_degrees = control.target_yaw
+            speed = 0.0 if distance <= 0.18 else 1.0
+            # The click target is a ground-plane X/Z destination.  Preserve
+            # the rig's height so a click with a different Y cannot sink it.
+            goal_position = (target[0], self.root_position[1], target[2])
+        else:
+            speed = min(1.0, math.hypot(control.move_x, control.move_y))
+            self.root_position[0] += control.move_x * 1.4 * dt
+            self.root_position[2] += control.move_y * 1.4 * dt
+            yaw_degrees = control.look_yaw
+            goal_position = (
+                self.root_position[0] + control.move_x,
+                self.root_position[1],
+                self.root_position[2] + control.move_y,
+            )
+
+        phase = now * (2.0 + speed * 5.0)
+        joints = _joints(phase, speed)
+        yaw = math.radians(yaw_degrees)
+        goal_yaw = math.radians(control.target_yaw if target is not None else control.look_yaw)
+        # A small, evenly spaced preview makes the mock usable by the exact
+        # same plan/goal visualizer as the CUDA runtime.
+        plan = tuple(
+            tuple(self.root_position[axis] + (goal_position[axis] - self.root_position[axis]) * i / 7
+                  for axis in range(3))
+            for i in range(8)
+        )
+        return PoseMessage(
+            seq=seq,
+            timestamp=now,
+            root_position=tuple(self.root_position),
+            root_rotation=_axis_angle((0.0, 1.0, 0.0), yaw),
+            joints=joints,
+            plan_root_positions=plan,
+            goal_root_position=goal_position,
+            goal_root_rotation=_axis_angle((0.0, 1.0, 0.0), goal_yaw),
+            goal_joints=_joints(phase + 1.0, 0.0 if target is not None else speed),
+        )
+
+
+def _mock_pose(control: ControlMessage, now: float, seq: int) -> PoseMessage:
+    """Compatibility helper for callers that do not need accumulated state."""
+    return MockRuntime().next_pose(control, now, seq)
 
 
 def run(control_host: str, control_port: int, unity_host: str, unity_port: int, fps: float) -> None:
@@ -49,6 +101,7 @@ def run(control_host: str, control_port: int, unity_host: str, unity_port: int, 
     control = ControlMessage(seq=0, move_x=0.0, move_y=0.0, look_yaw=0.0)
     period = 1.0 / fps
     sequence = 0
+    runtime = MockRuntime()
 
     print(f"Listening for Unity controls on udp://{control_host}:{control_port}")
     print(f"Sending mock poses to udp://{unity_host}:{unity_port} at {fps:g} FPS")
@@ -69,7 +122,7 @@ def run(control_host: str, control_port: int, unity_host: str, unity_port: int, 
 
             sequence += 1
             now = time.monotonic()
-            sender.sendto(encode_pose(_mock_pose(control, now, sequence)), target)
+            sender.sendto(encode_pose(runtime.next_pose(control, now, sequence)), target)
             remaining = period - (time.perf_counter() - frame_start)
             if remaining > 0:
                 time.sleep(remaining)

@@ -12,7 +12,7 @@ python -m unittest discover -s tests -v
 python mock_server.py
 ```
 
-Open `Assets/MotionBricks/Scenes/MotionBricksDemo.unity` with Unity `6000.3.13f1`, enter Play mode, and use WASD. The scene creates a visible primitive G1 rig and automatically binds all 29 streamed joints. The in-game overlay reports incoming pose packets. You can recreate the scene at any time with **MotionBricks > Create or Reset Demo Scene**.
+Open `Assets/MotionBricks/Scenes/MotionBricksDemo.unity` with Unity `6000.3.13f1` and enter Play mode. The scene creates a visible primitive G1 rig and automatically binds all 29 streamed joints. Click the ground to set a fixed navigation target; use WASD to adjust the target, Q/E to rotate its desired heading, and Escape to return to direct WASD control. Number keys 1-9 select target motion styles such as default, slow, zombie, injured, and stealth. The orange marker shows the requested position and heading, the cyan line shows MotionBricks' generated root plan, and the cyan G1 shows its generated terminal pose. You can recreate the scene at any time with **MotionBricks > Create or Reset Demo Scene**.
 
 ## External source
 
@@ -48,3 +48,12 @@ Bridge\.venv\Scripts\python.exe -u Bridge\motionbricks_server.py
 ```
 
 The environment variable allows the current official NVIDIA Lightning checkpoints to load under recent PyTorch versions. Only use it with checkpoints from the tracked NVIDIA submodule. The bridge sends the G1 root transform and 29 named joint rotations to Unity over UDP.
+
+Unity and Python communicate over loopback UDP ports `5005` and `5006` by default; this integration does not call an online inference service. Pose packets are optimized for same-machine use and can exceed a normal Ethernet MTU, so remote-machine transport is not currently supported. To measure the model on another CUDA GPU:
+
+```powershell
+$env:TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD = '1'
+Bridge\.venv\Scripts\python.exe -u Bridge\benchmark_runtime.py --frames 180
+```
+
+On the development RTX 5070 Ti, the public Python runtime reserved about 818 MiB of CUDA memory. After warmup, a 180-frame target run averaged 2.37 ms per streamed frame; eight replanning frames exceeded 33.3 ms and the maximum was 57.5 ms. Lower-power GPUs should be measured with the command above because occasional replanning latency, rather than VRAM capacity, is the likely constraint.

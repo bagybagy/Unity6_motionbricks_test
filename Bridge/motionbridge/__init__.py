@@ -6,6 +6,8 @@ from .pose_conversion import (
     mujoco_axis_to_unity,
     mujoco_position_to_unity,
     mujoco_root_quaternion_to_unity,
+    unity_position_to_mujoco,
+    unity_yaw_to_mujoco_heading,
 )
 
 __all__ = [
@@ -17,4 +19,6 @@ __all__ = [
     "mujoco_axis_to_unity",
     "mujoco_position_to_unity",
     "mujoco_root_quaternion_to_unity",
+    "unity_position_to_mujoco",
+    "unity_yaw_to_mujoco_heading",
 ]
