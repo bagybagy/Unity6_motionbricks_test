@@ -137,3 +137,4 @@ PlayerSettings:
   m_BuildTargetForceSingleInstance: []
   m_BuildTargetUseFlipModelSwapchain: []
   m_BuildTargetPlatformGroup: []
+  activeInputHandler: 2
