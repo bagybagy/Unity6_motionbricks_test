@@ -1,0 +1,21 @@
+{
+    "name": "MotionBricks.Tests.Editor",
+    "rootNamespace": "MotionBricks.Tests.Editor",
+    "references": [
+        "MotionBricks.Runtime"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": false,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "optionalUnityReferences": [
+        "TestAssemblies"
+    ],
+    "noEngineReferences": false
+}

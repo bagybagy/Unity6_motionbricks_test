@@ -1,0 +1,16 @@
+{
+    "name": "MotionBricks.Runtime",
+    "rootNamespace": "MotionBricks.Unity",
+    "references": [
+        "Unity.Newtonsoft.Json"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}
