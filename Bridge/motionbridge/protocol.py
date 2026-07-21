@@ -37,6 +37,10 @@ class ControlMessage:
     has_target: bool = False
     target_position: Vector3 = (0.0, 0.0, 0.0)
     target_yaw: float = 0.0
+    # Optional G1 hinge-angle target.  Angles are radians and names use the
+    # MuJoCo joint names returned in pose messages.
+    has_pose_target: bool = False
+    target_joint_angles: Mapping[str, float] = field(default_factory=dict)
     type: str = field(default="control", init=False)
 
 
@@ -77,6 +81,22 @@ def decode_control(payload: bytes) -> ControlMessage:
         target_position = (0.0, 0.0, 0.0) if raw_target_position is None else _vector(
             raw_target_position, 3, "target_position"
         )
+    has_pose_target = bool(raw.get("has_pose_target", False))
+    raw_joint_angles = raw.get("target_joint_angles")
+    if raw_joint_angles is None:
+        joint_angles: dict[str, float] = {}
+    elif not isinstance(raw_joint_angles, dict):
+        raise ValueError("target_joint_angles must be a mapping")
+    else:
+        if len(raw_joint_angles) > 29:
+            raise ValueError("target_joint_angles may contain at most 29 joints")
+        joint_angles = {
+            str(name): _finite(angle, f"target_joint_angles.{name}")
+            for name, angle in raw_joint_angles.items()
+        }
+    if has_pose_target and raw_joint_angles is None:
+        raise ValueError("target_joint_angles is required when has_pose_target is true")
+
     return ControlMessage(
         seq=int(raw["seq"]),
         move_x=max(-1.0, min(1.0, _finite(raw.get("move_x", 0.0), "move_x"))),
@@ -86,6 +106,8 @@ def decode_control(payload: bytes) -> ControlMessage:
         has_target=has_target,
         target_position=target_position,
         target_yaw=_finite(raw.get("target_yaw", 0.0), "target_yaw"),
+        has_pose_target=has_pose_target,
+        target_joint_angles=joint_angles,
     )
 
 

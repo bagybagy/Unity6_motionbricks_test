@@ -18,7 +18,18 @@ namespace MotionBricks.Editor
             var player = new GameObject("MotionBricks G1 Player");
             player.AddComponent<MotionBricksRigDriver>();
             player.AddComponent<G1DemoRigBuilder>();
-            player.AddComponent<MotionBricksUdpClient>();
+            player.AddComponent<MotionBricksPoseController>();
+            var udpClient = player.AddComponent<MotionBricksUdpClient>();
+
+            var humanoidPreview = new GameObject("Humanoid Retarget Preview");
+            humanoidPreview.transform.position = new Vector3(2f, 0f, 0f);
+            var previewRetargeter = humanoidPreview.AddComponent<G1HumanoidRetargeter>();
+            // The builder creates its transient Avatar and visuals on Play;
+            // they are not serialized as thousands of generated scene lines.
+            humanoidPreview.AddComponent<SimpleHumanoidDemoBuilder>();
+            // The UDP pose and joint-space preview both drive the valid side-by-side Avatar.
+            udpClient.SetHumanoidRetargeter(previewRetargeter);
+            player.GetComponent<MotionBricksPoseController>().SetHumanoidRetargeter(previewRetargeter);
 
             var ground = GameObject.CreatePrimitive(PrimitiveType.Plane);
             ground.name = "Ground";

@@ -21,6 +21,7 @@ from motionbridge.pose_conversion import (
     unity_position_to_mujoco,
     unity_yaw_to_mujoco_heading,
 )
+from motionbridge.pose_constraints import HingeLimit, PoseTargetAdapter
 from motionbridge.protocol import ControlMessage, PoseMessage, decode_control, encode_pose
 
 
@@ -59,6 +60,8 @@ class JointSpec:
     name: str
     qpos_address: int
     unity_axis: tuple[float, float, float]
+    minimum: float
+    maximum: float
 
 
 def _model_args() -> SimpleNamespace:
@@ -121,10 +124,20 @@ class MotionBricksRuntime:
         self.demo = navigation_demo(self.args)
         self.demo.full_agent.reset()
         self.joints = self._joint_specs()
+        self.pose_targets = PoseTargetAdapter(
+            self.demo.full_agent,
+            self.torch,
+            tuple(
+                HingeLimit(spec.name, spec.qpos_address, spec.minimum, spec.maximum)
+                for spec in self.joints
+            ),
+            lambda: self.demo.mj_data.qpos,
+        )
         self.sequence = 0
         self._last_target: tuple[float, float, float, float] | None = None
         self._last_mode: int | None = None
         self._last_target_arrived = True
+        self._last_pose_target_active = False
         self._pending_target: tuple[float, float, float, float] | None = None
         self._pending_target_since = 0.0
 
@@ -145,6 +158,8 @@ class MotionBricksRuntime:
                     name=name,
                     qpos_address=int(self.demo.mj_model.jnt_qposadr[joint_id]),
                     unity_axis=mujoco_axis_to_unity(self.demo.mj_model.jnt_axis[joint_id]),
+                    minimum=float(self.demo.mj_model.jnt_range[joint_id][0]),
+                    maximum=float(self.demo.mj_model.jnt_range[joint_id][1]),
                 )
             )
         if len(specs) != 29:
@@ -178,14 +193,29 @@ class MotionBricksRuntime:
             facing = (math.cos(target_heading), math.sin(target_heading), 0.0)
             target_arrived = distance <= ARRIVAL_DISTANCE_METERS
             magnitude = 0.0 if target_arrived else 1.0
+        elif control.has_pose_target or getattr(self, "_last_pose_target_active", False):
+            # A pose-only edit and its one-shot release generation must not
+            # inherit clip locomotion momentum. Keep the root where it is and
+            # use the commanded view heading.
+            target_position = tuple(float(value) for value in self.demo.mj_data.qpos[0:3])
+            target_heading = unity_yaw_to_mujoco_heading(control.look_yaw)
+            movement = (0.0, 0.0, 0.0)
+            facing = (math.cos(target_heading), math.sin(target_heading), 0.0)
+            target_arrived = True
+            magnitude = 0.0
 
         requested = STYLE_ALIASES.get(control.style.lower(), control.style.lower())
-        if target_arrived:
+        if target_arrived or (
+            not control.has_target
+            and (control.has_pose_target or getattr(self, "_last_pose_target_active", False))
+        ):
             # The goal condition is complete regardless of the selected
             # locomotion style, so keep a stable terminal idle pose.
             movement = (0.0, 0.0, 0.0)
             requested = "idle"
-        elif requested == "walk" and magnitude <= 1e-5:
+        elif magnitude <= 1e-5:
+            # Every released G1 mode is locomotion-conditioned. Without a
+            # direct or fixed-target movement request, stay in stable idle.
             requested = "idle"
         if requested not in self.clip_names:
             requested = "walk" if magnitude > 1e-5 else "idle"
@@ -212,6 +242,20 @@ class MotionBricksRuntime:
             )
             signals["has_specific_target"] = torch.ones((1, 1), dtype=torch.int32)
         return signals
+
+    def _target_key(self, control: ControlMessage) -> tuple[object, ...] | None:
+        """Stable target identity in official G1 hinge order, not wire-map order."""
+        if not (control.has_target or control.has_pose_target):
+            return None
+        heading = control.target_yaw if control.has_target else control.look_yaw
+        pose_angles = tuple(control.target_joint_angles.get(spec.name) for spec in self.joints)
+        return (
+            control.has_target,
+            control.has_pose_target,
+            *(control.target_position if control.has_target else (None, None, None)),
+            heading,
+            *pose_angles,
+        )
 
     def _joint_rotations(self, qpos: Sequence[float]) -> dict[str, tuple[float, float, float, float]]:
         return {
@@ -242,11 +286,16 @@ class MotionBricksRuntime:
     def _should_force_generation(
         self,
         control: ControlMessage,
-        target_key: tuple[float, float, float, float] | None,
+        target_key: tuple[object, ...] | None,
         now: float,
     ) -> bool:
         """Force a settled target once, without replanning for every held key event."""
-        if not control.has_target:
+        if control.has_pose_target != getattr(self, "_last_pose_target_active", False):
+            # A release needs an idle-to-idle generation too: otherwise the
+            # last constrained target can remain in the current plan.
+            self._pending_target = None
+            return True
+        if not (control.has_target or control.has_pose_target):
             self._pending_target = None
             return False
 
@@ -279,21 +328,29 @@ class MotionBricksRuntime:
         qpos = self.demo.full_agent.get_next_frame()
         self.demo.mj_data.qpos[:] = qpos
         signals = self._control_signals(control)
-        target_key = (*control.target_position, control.target_yaw) if control.has_target else None
+        target_key = self._target_key(control)
         # full_agent intentionally skips idle-to-idle replans. New goals start
         # immediately, while held-key target edits are regenerated once after
         # they settle instead of triggering expensive inference at 30 Hz.
         force_generation = self._should_force_generation(
             control, target_key, time.monotonic()
         )
-        with self.torch.no_grad():
-            self.demo.full_agent.generate_new_frames(
-                signals,
-                self.demo.controller.get_controller_dt() * self.args.generate_dt,
-                force_generation=force_generation,
-            )
+        # The adapter is active only while this inference call can consume it;
+        # clearing it restores the official clip target path for later calls.
+        if control.has_pose_target:
+            self.pose_targets.set_active(control.target_joint_angles)
+        try:
+            with self.torch.no_grad():
+                self.demo.full_agent.generate_new_frames(
+                    signals,
+                    self.demo.controller.get_controller_dt() * self.args.generate_dt,
+                    force_generation=force_generation,
+                )
+        finally:
+            self.pose_targets.clear_active()
         self._last_target = target_key
         self._last_target_arrived = self._current_target_arrived
+        self._last_pose_target_active = control.has_pose_target
         self._last_mode = self._current_mode
 
         plan_root_positions, goal_qpos = self._generated_plan()

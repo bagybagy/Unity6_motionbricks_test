@@ -22,12 +22,12 @@ def _joints(phase: float, speed: float) -> dict[str, tuple[float, float, float, 
     knee = max(0.0, math.sin(phase)) * speed * 0.7
     opposite_knee = max(0.0, -math.sin(phase)) * speed * 0.7
     return {
-        "left_hip_pitch_joint": _axis_angle((1.0, 0.0, 0.0), stride),
-        "right_hip_pitch_joint": _axis_angle((1.0, 0.0, 0.0), -stride),
-        "left_knee_joint": _axis_angle((1.0, 0.0, 0.0), knee),
-        "right_knee_joint": _axis_angle((1.0, 0.0, 0.0), opposite_knee),
-        "left_shoulder_pitch_joint": _axis_angle((1.0, 0.0, 0.0), -stride * 0.7),
-        "right_shoulder_pitch_joint": _axis_angle((1.0, 0.0, 0.0), stride * 0.7),
+        "left_hip_pitch_joint": _axis_angle((-1.0, 0.0, 0.0), stride),
+        "right_hip_pitch_joint": _axis_angle((-1.0, 0.0, 0.0), -stride),
+        "left_knee_joint": _axis_angle((-1.0, 0.0, 0.0), knee),
+        "right_knee_joint": _axis_angle((-1.0, 0.0, 0.0), opposite_knee),
+        "left_shoulder_pitch_joint": _axis_angle((-1.0, 0.0, 0.0), -stride * 0.7),
+        "right_shoulder_pitch_joint": _axis_angle((-1.0, 0.0, 0.0), stride * 0.7),
     }
 
 
@@ -74,6 +74,13 @@ class MockRuntime:
                   for axis in range(3))
             for i in range(8)
         )
+        goal_joints = _joints(phase + 1.0, 0.0 if target is not None else speed)
+        if control.has_pose_target:
+            # The mock exposes only its six illustrative hinges; unknown G1
+            # names are ignored just as the CUDA runtime ignores unknown MJCF joints.
+            for name, angle in control.target_joint_angles.items():
+                if name in goal_joints:
+                    goal_joints[name] = _axis_angle((-1.0, 0.0, 0.0), angle)
         return PoseMessage(
             seq=seq,
             timestamp=now,
@@ -83,7 +90,7 @@ class MockRuntime:
             plan_root_positions=plan,
             goal_root_position=goal_position,
             goal_root_rotation=_axis_angle((0.0, 1.0, 0.0), goal_yaw),
-            goal_joints=_joints(phase + 1.0, 0.0 if target is not None else speed),
+            goal_joints=goal_joints,
         )
 
 

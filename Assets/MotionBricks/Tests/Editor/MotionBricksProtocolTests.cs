@@ -50,5 +50,17 @@ namespace MotionBricks.Tests.Editor
             Assert.That(message.TargetPosition, Is.EqualTo(new[] { 1f, 2f, 3f }));
             Assert.That(message.TargetYaw, Is.EqualTo(135f));
         }
+
+        [Test]
+        public void ControlMessage_StoresOptionalG1JointSpaceTarget()
+        {
+            var message = new ControlMessage
+            {
+                HasPoseTarget = true,
+                TargetJointAngles = new System.Collections.Generic.Dictionary<string, float> { ["left_knee_joint"] = 0.75f },
+            };
+            Assert.That(message.HasPoseTarget, Is.True);
+            Assert.That(message.TargetJointAngles["left_knee_joint"], Is.EqualTo(0.75f));
+        }
     }
 }

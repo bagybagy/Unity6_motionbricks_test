@@ -26,6 +26,8 @@ namespace MotionBricks.Unity
         [SerializeField] private MotionBricksRigDriver rigDriver;
         [SerializeField] private MotionBricksTargetController targetController;
         [SerializeField] private MotionBricksTargetVisualizer targetVisualizer;
+        [SerializeField] private MotionBricksPoseController poseController;
+        [SerializeField] private G1HumanoidRetargeter humanoidRetargeter;
         [SerializeField] private bool showDebugOverlay = true;
 
         private readonly ConcurrentQueue<PoseMessage> receivedPoses = new();
@@ -43,6 +45,8 @@ namespace MotionBricks.Unity
         public long ReceivedPoseCount => Interlocked.Read(ref receivedPoseCount);
         public string LastReceiveError => lastReceiveError;
         public bool IsRunning => cancellation != null && !cancellation.IsCancellationRequested;
+        public string Style { get => style; set => style = string.IsNullOrWhiteSpace(value) ? "idle" : value; }
+        public void SetHumanoidRetargeter(G1HumanoidRetargeter value) => humanoidRetargeter = value;
 
         private void Awake()
         {
@@ -54,6 +58,9 @@ namespace MotionBricks.Unity
             targetController ??= gameObject.AddComponent<MotionBricksTargetController>();
             targetVisualizer ??= GetComponent<MotionBricksTargetVisualizer>();
             targetVisualizer ??= gameObject.AddComponent<MotionBricksTargetVisualizer>();
+            poseController ??= GetComponent<MotionBricksPoseController>();
+            poseController ??= gameObject.AddComponent<MotionBricksPoseController>();
+            humanoidRetargeter ??= GetComponent<G1HumanoidRetargeter>();
         }
 
         private void OnEnable() => StartTransport();
@@ -76,6 +83,8 @@ namespace MotionBricks.Unity
             {
                 lastPoseTimestamp = newest.Timestamp;
                 rigDriver?.Apply(newest);
+                poseController?.RecordReceivedPose(newest);
+                humanoidRetargeter?.Apply(newest);
                 targetVisualizer?.Apply(newest);
             }
         }
@@ -161,6 +170,9 @@ namespace MotionBricks.Unity
                 HasTarget = hasTarget,
                 TargetPosition = hasTarget ? targetController.TargetPositionArray : null,
                 TargetYaw = hasTarget ? targetController.TargetYaw : 0f,
+                HasPoseTarget = poseController != null && poseController.HasPoseTarget,
+                TargetJointAngles = poseController != null && poseController.HasPoseTarget
+                    ? poseController.CopyTargetJointAngles() : null,
             };
         }
 
@@ -199,7 +211,7 @@ namespace MotionBricks.Unity
             GUI.Label(new Rect(22, 58, 500, 20), targetController != null && targetController.HasTarget
                 ? "Target: WASD adjust | Q/E yaw | Esc clears target"
                 : "Click ground: set target | WASD: direct move | Mouse X: yaw");
-            GUI.Label(new Rect(22, 78, 500, 20), $"Style: {style} | 1 default, 2 slow, 3 zombie, 4 injured, 5 stealth, 6-9 more");
+            GUI.Label(new Rect(22, 78, 500, 20), $"Mode: {style} | pose target: {(poseController != null && poseController.HasPoseTarget ? "on" : "off")}");
             GUI.Label(new Rect(22, 98, 400, 20), string.IsNullOrEmpty(lastReceiveError)
                 ? $"Last pose timestamp: {lastPoseTimestamp:F3}"
                 : $"UDP: {lastReceiveError}");

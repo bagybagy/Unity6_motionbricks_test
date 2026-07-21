@@ -18,6 +18,9 @@ namespace MotionBricks.Unity
         [JsonProperty("has_target")] public bool HasTarget;
         [JsonProperty("target_position")] public float[] TargetPosition;
         [JsonProperty("target_yaw")] public float TargetYaw;
+        // Optional joint-space target. Angles use the G1 hinge convention (radians).
+        [JsonProperty("has_pose_target")] public bool HasPoseTarget;
+        [JsonProperty("target_joint_angles")] public Dictionary<string, float> TargetJointAngles;
     }
 
     [Serializable]
