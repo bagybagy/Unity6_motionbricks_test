@@ -4,5 +4,9 @@
 EditorBuildSettings:
   m_ObjectHideFlags: 0
   serializedVersion: 2
-  m_Scenes: []
+  m_Scenes:
+  - enabled: 1
+    path: Assets/MotionBricks/Scenes/MotionBricksDemo.unity
+    guid: 3727dc65ac287154790f967cc64eb9d7
   m_configObjects: {}
+  m_UseUCBPForAssetBundles: 0

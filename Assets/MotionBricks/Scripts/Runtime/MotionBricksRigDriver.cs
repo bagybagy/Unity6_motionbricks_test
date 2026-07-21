@@ -23,6 +23,9 @@ namespace MotionBricks.Unity
 
         private readonly Dictionary<string, Transform> joints = new(StringComparer.Ordinal);
 
+        /// <summary>Number of valid joint-name to Transform mappings currently registered.</summary>
+        public int BindingCount => joints.Count;
+
         private void Awake() => RebuildBindings();
 
         private void OnValidate() => RebuildBindings();
@@ -36,6 +39,13 @@ namespace MotionBricks.Unity
                     continue;
                 joints[binding.jointName] = binding.transform;
             }
+        }
+
+        /// <summary>Replaces inspector bindings with generated or programmatic rig bindings.</summary>
+        public void SetBindings(IEnumerable<JointBinding> bindings)
+        {
+            jointBindings = bindings == null ? new List<JointBinding>() : new List<JointBinding>(bindings);
+            RebuildBindings();
         }
 
         public void Apply(PoseMessage pose)

@@ -12,7 +12,7 @@ python -m unittest discover -s tests -v
 python mock_server.py
 ```
 
-Open the project with Unity `6000.3.13f1`, enter Play mode, and use WASD. The in-game connection status should report incoming pose packets.
+Open `Assets/MotionBricks/Scenes/MotionBricksDemo.unity` with Unity `6000.3.13f1`, enter Play mode, and use WASD. The scene creates a visible primitive G1 rig and automatically binds all 29 streamed joints. The in-game overlay reports incoming pose packets. You can recreate the scene at any time with **MotionBricks > Create or Reset Demo Scene**.
 
 ## External source
 
