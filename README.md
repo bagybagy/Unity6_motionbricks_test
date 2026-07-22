@@ -12,12 +12,14 @@ NVIDIA MotionBricks の公開 G1 モデルを、Unity 6 のゲーム画面から
 
 ## デモの起動
 
-先にローカル CUDA サーバーを起動します。
+クローンフォルダ `Unity6_motionbricks` で PowerShell を開き、先にローカル CUDA サーバーを起動します。
 
 ```powershell
 $env:TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD = '1'
 Bridge\.venv\Scripts\python.exe -u Bridge\motionbricks_server.py
 ```
+
+`WinError 10048` が表示された場合は、既に別の MotionBricks サーバーが起動しています。二重起動せず、起動済みのサーバーをそのまま使用してください。
 
 Unity `6000.3.13f1` で `Assets/MotionBricks/Scenes/MotionBricksDemo.unity` を開き、Play を押します。シーンを作り直す場合は Unity メニューの **MotionBricks > Create or Reset Demo Scene** を実行します。
 
