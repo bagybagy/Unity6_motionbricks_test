@@ -30,7 +30,12 @@ def mujoco_root_quaternion_to_unity(quaternion_wxyz: Sequence[float]) -> Quatern
 
 
 def mujoco_axis_to_unity(axis: Sequence[float]) -> Vector3:
-    return -float(axis[1]), float(axis[2]), float(axis[0])
+    """Map a MuJoCo axial vector (rotation axis) into Unity coordinates.
+
+    Axial vectors gain an extra sign under the handedness-reflecting position
+    transform; using the position-vector mapping here reverses every hinge.
+    """
+    return float(axis[1]), -float(axis[2]), -float(axis[0])
 
 
 def axis_angle_to_quaternion(axis: Sequence[float], angle: float) -> Quaternion:

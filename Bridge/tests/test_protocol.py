@@ -33,7 +33,7 @@ class ProtocolTests(unittest.TestCase):
     def test_mujoco_to_unity_coordinate_conversion(self) -> None:
         self.assertEqual(mujoco_position_to_unity((1.0, 2.0, 3.0)), (-2.0, 3.0, 1.0))
         self.assertEqual(unity_position_to_mujoco((-2.0, 3.0, 1.0)), (1.0, 2.0, 3.0))
-        self.assertEqual(mujoco_axis_to_unity((0.0, 1.0, 0.0)), (-1.0, 0.0, 0.0))
+        self.assertEqual(mujoco_axis_to_unity((0.0, 1.0, 0.0)), (1.0, -0.0, -0.0))
         self.assertEqual(
             mujoco_root_quaternion_to_unity((1.0, 0.0, 0.0, 0.0)),
             (0.0, -0.0, -0.0, 1.0),
@@ -46,6 +46,18 @@ class ProtocolTests(unittest.TestCase):
         self.assertAlmostEqual(rotation[1], 1.0)
         self.assertAlmostEqual(rotation[2], 0.0)
         self.assertAlmostEqual(rotation[3], 0.0)
+
+    def test_hinge_axis_conversion_matches_root_quaternion_conversion(self) -> None:
+        angle = math.pi / 3
+        half = angle / 2
+        converted_root = mujoco_root_quaternion_to_unity(
+            (math.cos(half), 0.0, math.sin(half), 0.0)
+        )
+        converted_hinge = axis_angle_to_quaternion(
+            mujoco_axis_to_unity((0.0, 1.0, 0.0)), angle
+        )
+        for actual, expected in zip(converted_hinge, converted_root):
+            self.assertAlmostEqual(actual, expected)
 
     def test_decode_control_clamps_movement(self) -> None:
         message = decode_control(
@@ -182,7 +194,7 @@ class ProtocolTests(unittest.TestCase):
             1.0,
             1,
         )
-        self.assertAlmostEqual(pose.goal_joints["left_knee_joint"][0], -1.0)
+        self.assertAlmostEqual(pose.goal_joints["left_knee_joint"][0], 1.0)
         self.assertAlmostEqual(pose.goal_joints["left_knee_joint"][3], 0.0)
 
     def test_pose_constraint_clamps_known_hinges_and_ignores_unknown_names(self) -> None:

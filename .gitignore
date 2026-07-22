@@ -112,3 +112,7 @@ InitTestScene*.unity*
 /Bridge/**/__pycache__/
 /Bridge/**/*.py[cod]
 /Bridge/.env
+
+# Local verification artifacts
+/TestResults/
+/unitychan-*.png

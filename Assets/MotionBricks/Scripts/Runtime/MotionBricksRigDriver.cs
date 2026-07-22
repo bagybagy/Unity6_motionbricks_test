@@ -13,6 +13,10 @@ namespace MotionBricks.Unity
             [Tooltip("The joint key used in the pose JSON message.")]
             public string jointName;
             public Transform transform;
+            [Tooltip("Unity-local hinge axis for exact joint-angle messages.")]
+            public Vector3 localAxis;
+            [Tooltip("Joint's MJCF/body rest rotation. Incoming hinge rotations are composed after it.")]
+            public Quaternion restLocalRotation = Quaternion.identity;
         }
 
         [SerializeField] private Transform rootTransform;
@@ -21,7 +25,7 @@ namespace MotionBricks.Unity
         [SerializeField, Min(0f)] private float positionScale = 1f;
         [SerializeField] private List<JointBinding> jointBindings = new();
 
-        private readonly Dictionary<string, Transform> joints = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, JointBinding> joints = new(StringComparer.Ordinal);
 
         /// <summary>Number of valid joint-name to Transform mappings currently registered.</summary>
         public int BindingCount => joints.Count;
@@ -37,7 +41,7 @@ namespace MotionBricks.Unity
             {
                 if (binding?.transform == null || string.IsNullOrWhiteSpace(binding.jointName))
                     continue;
-                joints[binding.jointName] = binding.transform;
+                joints[binding.jointName] = binding;
             }
         }
 
@@ -59,14 +63,35 @@ namespace MotionBricks.Unity
             if (applyRootRotation)
                 root.rotation = pose.GetRootRotation();
 
-            if (pose.Joints == null)
-                return;
-            foreach (var (jointName, values) in pose.Joints)
+            foreach (var (jointName, binding) in joints)
             {
-                if (!joints.TryGetValue(jointName, out var joint) || values is not { Length: >= 4 })
+                var rest = IsZeroQuaternion(binding.restLocalRotation)
+                    ? Quaternion.identity
+                    : binding.restLocalRotation;
+
+                // JointAngles are the original MuJoCo hinge coordinates, so prefer them
+                // over a converted quaternion whenever the server supplies both.
+                if (pose.JointAngles != null &&
+                    pose.JointAngles.TryGetValue(jointName, out var radians) &&
+                    binding.localAxis.sqrMagnitude > .000001f)
+                {
+                    binding.transform.localRotation = rest * Quaternion.AngleAxis(
+                        radians * Mathf.Rad2Deg,
+                        binding.localAxis.normalized);
                     continue;
-                joint.localRotation = new Quaternion(values[0], values[1], values[2], values[3]);
+                }
+
+                if (pose.Joints != null &&
+                    pose.Joints.TryGetValue(jointName, out var values) &&
+                    values is { Length: >= 4 })
+                {
+                    binding.transform.localRotation = rest * new Quaternion(
+                        values[0], values[1], values[2], values[3]);
+                }
             }
         }
+
+        private static bool IsZeroQuaternion(Quaternion value) =>
+            Mathf.Abs(value.x) + Mathf.Abs(value.y) + Mathf.Abs(value.z) + Mathf.Abs(value.w) < .000001f;
     }
 }

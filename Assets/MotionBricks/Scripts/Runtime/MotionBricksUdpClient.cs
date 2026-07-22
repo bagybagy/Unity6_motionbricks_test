@@ -215,7 +215,7 @@ namespace MotionBricks.Unity
                 return;
             var status = IsRunning ? "Listening" : "Stopped";
             var hasTarget = targetController != null && targetController.HasTarget;
-            GUI.Box(new Rect(12, 12, 520, hasTarget ? 156 : 116), "MotionBricks UDP bridge");
+            GUI.Box(new Rect(12, 12, 520, hasTarget ? 176 : 136), "MotionBricks UDP bridge");
             GUI.Label(new Rect(22, 38, 310, 20), $"{status}: controls {bridgeHost}:{controlPort}, poses :{posePort}");
             GUI.Label(new Rect(22, 58, 500, 20), hasTarget
                 ? "Target: WASD adjust | Q/E yaw | Esc clears target"
@@ -226,13 +226,14 @@ namespace MotionBricks.Unity
                 : $"UDP: {lastReceiveError}");
             if (hasTarget)
             {
-                GUI.Label(new Rect(22, 122, 100, 20), $"End yaw: {targetController.TargetYaw:F0}°");
+                GUI.Label(new Rect(22, 122, 110, 20), $"End yaw: {targetController.TargetYaw:F0} deg");
                 var updatedYaw = GUI.HorizontalSlider(new Rect(122, 126, 260, 20), targetController.TargetYaw, 0f, 360f);
                 if (!Mathf.Approximately(updatedYaw, targetController.TargetYaw))
                     targetController.SetTargetYaw(updatedYaw);
-                if (GUI.Button(new Rect(392, 118, 128, 26), "Turn 180°"))
+                if (GUI.Button(new Rect(392, 118, 128, 26), "Turn 180 deg"))
                     targetController.SetTargetYaw(targetController.TargetYaw + 180f);
             }
+            GUI.Label(new Rect(22, hasTarget ? 150 : 116, 400, 20), "G1 axes: X red / Y green / Z blue");
         }
     }
 }

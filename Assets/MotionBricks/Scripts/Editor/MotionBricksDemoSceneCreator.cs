@@ -11,6 +11,9 @@ namespace MotionBricks.Editor
         public const string ScenePath = "Assets/MotionBricks/Scenes/MotionBricksDemo.unity";
         public const string UnityChanModelPath = "Assets/MotionBricks/Resources/UnityChan/unitychan.fbx";
 
+        [MenuItem("MotionBricks/Open Demo Scene")]
+        public static void OpenDemoScene() => EditorSceneManager.OpenScene(ScenePath);
+
         [MenuItem("MotionBricks/Create or Reset Demo Scene")]
         public static void CreateOrResetDemoScene()
         {
@@ -18,23 +21,20 @@ namespace MotionBricks.Editor
 
             var player = new GameObject("MotionBricks G1 Player");
             player.AddComponent<MotionBricksRigDriver>();
-            player.AddComponent<G1DemoRigBuilder>();
+            var sourceRig = player.AddComponent<G1DemoRigBuilder>();
             player.AddComponent<MotionBricksPoseController>();
             var udpClient = player.AddComponent<MotionBricksUdpClient>();
 
             var humanoidPreview = new GameObject("Humanoid Retarget Preview");
             humanoidPreview.transform.position = new Vector3(2f, 0f, 0f);
             var previewRetargeter = humanoidPreview.AddComponent<G1HumanoidRetargeter>();
+            previewRetargeter.SetSourceRig(sourceRig);
+            var humanoidBuilder = humanoidPreview.AddComponent<SimpleHumanoidDemoBuilder>();
             var unityChanModel = AssetDatabase.LoadAssetAtPath<GameObject>(UnityChanModelPath);
             if (unityChanModel == null)
                 throw new System.IO.FileNotFoundException("Unity-chan model is required by the demo scene.", UnityChanModelPath);
-            var unityChanInstance = (GameObject)PrefabUtility.InstantiatePrefab(unityChanModel, scene);
-            unityChanInstance.name = "UnityChan Model";
-            unityChanInstance.transform.SetParent(humanoidPreview.transform, false);
-            unityChanInstance.transform.SetLocalPositionAndRotation(Vector3.zero, Quaternion.identity);
-            unityChanInstance.transform.localScale = Vector3.one;
-            previewRetargeter.SetAnimator(unityChanInstance.GetComponentInChildren<Animator>());
-            // The UDP pose and joint-space preview both drive the valid side-by-side Avatar.
+            humanoidBuilder.SetHumanoidPrefab(unityChanModel);
+            // Keep the saved scene clean: the untouched model is instantiated and validated on Play.
             udpClient.SetHumanoidRetargeter(previewRetargeter);
             player.GetComponent<MotionBricksPoseController>().SetHumanoidRetargeter(previewRetargeter);
 

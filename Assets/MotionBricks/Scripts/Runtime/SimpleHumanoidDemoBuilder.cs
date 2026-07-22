@@ -1,154 +1,100 @@
-using System;
 using System.Collections.Generic;
 using UnityEngine;
 
 namespace MotionBricks.Unity
 {
-    /// <summary>Builds the side-by-side Humanoid retarget preview, with a procedural fallback for tests.</summary>
+    /// <summary>Instantiates an untouched prefab that already has a valid Unity Humanoid Avatar.</summary>
     [DisallowMultipleComponent]
     public sealed class SimpleHumanoidDemoBuilder : MonoBehaviour
     {
         [SerializeField] private G1HumanoidRetargeter retargeter;
+        [Tooltip("Any prefab with a valid Humanoid Animator in its child hierarchy.")]
         [SerializeField] private GameObject humanoidPrefab;
         [SerializeField] private bool buildOnAwake = true;
-        [SerializeField] private Color color = new(0.35f, 0.72f, 0.42f, 1f);
-        private readonly Dictionary<string, Transform> bones = new(StringComparer.Ordinal);
-        private GameObject generatedModel;
-        private bool ownsAvatar;
-        private bool useProceduralFallback;
+        [SerializeField, HideInInspector] private GameObject generatedModel;
 
+        public GameObject HumanoidPrefab => humanoidPrefab;
         public Animator Animator { get; private set; }
         public Avatar Avatar { get; private set; }
+        public GameObject CurrentModel => generatedModel;
+        public string LastError { get; private set; }
+        public string Status { get; private set; }
         public bool HasValidHumanoidAvatar => Avatar != null && Avatar.isHuman && Avatar.isValid;
         public bool UsesExternalHumanoid => generatedModel != null;
 
         public void SetHumanoidPrefab(GameObject value) => humanoidPrefab = value;
-        public void UseProceduralFallback() { useProceduralFallback = true; humanoidPrefab = null; }
 
         private void Awake() { if (buildOnAwake) Build(); }
 
         [ContextMenu("Build Simple Humanoid Demo")]
         public void Build()
         {
-            // Rebuilding must be synchronous so duplicate bone names cannot leak into AvatarBuilder.
-            ClearGenerated(immediate: true);
-            if (!useProceduralFallback)
-                humanoidPrefab ??= Resources.Load<GameObject>("UnityChan/unitychan");
-            if (humanoidPrefab != null && BuildExternalHumanoid())
+            LastError = null;
+            Status = null;
+            var prefab = humanoidPrefab != null ? humanoidPrefab : Resources.Load<GameObject>("UnityChan/unitychan");
+            if (prefab == null)
+            {
+                LastError = "No Humanoid prefab is assigned and the default UnityChan resource was not found.";
+                Status = "Build failed";
                 return;
-
-            var root = new GameObject("Hips").transform;
-            root.SetParent(transform, false);
-            bones["Hips"] = root;
-            Add("Spine", "Hips", new Vector3(0, .32f, 0));
-            Add("Chest", "Spine", new Vector3(0, .26f, 0));
-            Add("Neck", "Chest", new Vector3(0, .22f, 0));
-            Add("Head", "Neck", new Vector3(0, .18f, 0));
-            Add("LeftShoulder", "Chest", new Vector3(-.18f, .16f, 0));
-            Add("LeftUpperArm", "LeftShoulder", new Vector3(-.24f, 0, 0));
-            Add("LeftLowerArm", "LeftUpperArm", new Vector3(-.25f, 0, 0));
-            Add("LeftHand", "LeftLowerArm", new Vector3(-.16f, 0, 0));
-            Add("RightShoulder", "Chest", new Vector3(.18f, .16f, 0));
-            Add("RightUpperArm", "RightShoulder", new Vector3(.24f, 0, 0));
-            Add("RightLowerArm", "RightUpperArm", new Vector3(.25f, 0, 0));
-            Add("RightHand", "RightLowerArm", new Vector3(.16f, 0, 0));
-            Add("LeftUpperLeg", "Hips", new Vector3(-.12f, -.34f, 0));
-            Add("LeftLowerLeg", "LeftUpperLeg", new Vector3(0, -.38f, 0));
-            Add("LeftFoot", "LeftLowerLeg", new Vector3(0, -.34f, .07f));
-            Add("LeftToes", "LeftFoot", new Vector3(0, 0, .19f));
-            Add("RightUpperLeg", "Hips", new Vector3(.12f, -.34f, 0));
-            Add("RightLowerLeg", "RightUpperLeg", new Vector3(0, -.38f, 0));
-            Add("RightFoot", "RightLowerLeg", new Vector3(0, -.34f, .07f));
-            Add("RightToes", "RightFoot", new Vector3(0, 0, .19f));
-
-            Avatar = AvatarBuilder.BuildHumanAvatar(gameObject, CreateDescription());
-            ownsAvatar = true;
-            var animatorComponent = gameObject.GetComponent<Animator>();
-            if (animatorComponent == null) animatorComponent = gameObject.AddComponent<Animator>();
-            Animator = animatorComponent;
-            Animator.avatar = Avatar;
-            retargeter ??= GetComponent<G1HumanoidRetargeter>();
-            retargeter?.SetAnimator(Animator);
+            }
+            BuildExternalHumanoid(prefab);
         }
 
         [ContextMenu("Clear Simple Humanoid Demo")]
         public void Clear() => ClearGenerated(immediate: !Application.isPlaying);
 
-        private void OnDestroy()
-        {
-            if (Avatar == null || !ownsAvatar) return;
-            if (Application.isPlaying) Destroy(Avatar); else DestroyImmediate(Avatar);
-            Avatar = null;
-        }
-
         private void ClearGenerated(bool immediate)
         {
-            if (Avatar != null && ownsAvatar)
-            {
-                if (immediate) DestroyImmediate(Avatar); else Destroy(Avatar);
-            }
             Avatar = null;
-            ownsAvatar = false;
             Animator = null;
-            bones.Clear();
+            retargeter ??= GetComponent<G1HumanoidRetargeter>();
+            retargeter?.SetAnimator(null);
             if (generatedModel != null)
             {
                 if (immediate) DestroyImmediate(generatedModel); else Destroy(generatedModel);
                 generatedModel = null;
             }
-            var old = transform.Find("Hips");
-            if (old != null)
-            {
-                if (immediate) DestroyImmediate(old.gameObject); else Destroy(old.gameObject);
-            }
         }
 
-        private bool BuildExternalHumanoid()
+        private bool BuildExternalHumanoid(GameObject prefab)
         {
-            generatedModel = Instantiate(humanoidPrefab, transform, false);
-            generatedModel.name = "UnityChan Model";
-            generatedModel.transform.SetLocalPositionAndRotation(Vector3.zero, Quaternion.identity);
-            generatedModel.transform.localScale = Vector3.one;
-            Animator = generatedModel.GetComponentInChildren<Animator>();
-            Avatar = Animator != null ? Animator.avatar : null;
-            if (!HasValidHumanoidAvatar)
+            // Validate an isolated candidate first. A bad Generic/Legacy asset must not
+            // remove the currently working Humanoid from the scene.
+            var candidate = Instantiate(prefab, transform, false);
+            candidate.name = prefab.name + " Model";
+            candidate.transform.SetLocalPositionAndRotation(Vector3.zero, Quaternion.identity);
+            var candidateAnimator = candidate.GetComponentInChildren<Animator>(true);
+            var candidateAvatar = candidateAnimator != null ? candidateAnimator.avatar : null;
+            var candidateIsValid = candidateAnimator != null && candidateAnimator.isHuman &&
+                                   candidateAvatar != null && candidateAvatar.isHuman && candidateAvatar.isValid;
+            if (!candidateIsValid)
             {
-                DestroyImmediate(generatedModel);
-                generatedModel = null;
-                Animator = null;
-                Avatar = null;
+                LastError = $"'{prefab.name}' does not contain a valid Humanoid Animator/Avatar.";
+                Status = "Build rejected";
+                DestroyObject(candidate, immediate: !Application.isPlaying);
+                Debug.LogWarning($"MotionBricks Humanoid swap rejected: {LastError}", this);
                 return false;
             }
 
-            Animator.applyRootMotion = false;
+            candidateAnimator.applyRootMotion = false;
+            candidateAnimator.runtimeAnimatorController = null;
+            ClearGenerated(immediate: !Application.isPlaying);
+            generatedModel = candidate;
+            Animator = candidateAnimator;
+            Avatar = candidateAvatar;
             retargeter ??= GetComponent<G1HumanoidRetargeter>();
             retargeter?.SetAnimator(Animator);
+            retargeter?.ApplyJointAngles(new Dictionary<string, float>());
+            Status = $"Humanoid prefab '{prefab.name}' built";
             return true;
         }
 
-        private void Add(string name, string parentName, Vector3 position)
+        private static void DestroyObject(UnityEngine.Object value, bool immediate)
         {
-            var bone = new GameObject(name).transform;
-            bone.SetParent(bones[parentName], false);
-            bone.localPosition = position;
-            bones[name] = bone;
-            var visual = GameObject.CreatePrimitive(PrimitiveType.Capsule);
-            visual.name = "visual";
-            visual.transform.SetParent(bone, false);
-            visual.transform.localScale = Vector3.one * .11f;
-            var renderer = visual.GetComponent<Renderer>();
-            var block = new MaterialPropertyBlock(); block.SetColor("_BaseColor", color); block.SetColor("_Color", color); renderer.SetPropertyBlock(block);
+            if (value == null) return;
+            if (immediate) DestroyImmediate(value); else Destroy(value);
         }
 
-        private HumanDescription CreateDescription()
-        {
-            var humans = new List<HumanBone>();
-            foreach (var name in bones.Keys)
-                humans.Add(new HumanBone { boneName = name, humanName = name, limit = new HumanLimit { useDefaultValues = true } });
-            var skeleton = new List<SkeletonBone>();
-            foreach (var (name, bone) in bones)
-                skeleton.Add(new SkeletonBone { name = name, position = bone.localPosition, rotation = bone.localRotation, scale = bone.localScale });
-            return new HumanDescription { human = humans.ToArray(), skeleton = skeleton.ToArray(), upperArmTwist = .5f, lowerArmTwist = .5f, upperLegTwist = .5f, lowerLegTwist = .5f, armStretch = .05f, legStretch = .05f, feetSpacing = 0f, hasTranslationDoF = false };
-        }
     }
 }

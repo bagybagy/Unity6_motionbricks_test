@@ -32,7 +32,9 @@ def _joint_angles(phase: float, speed: float) -> dict[str, float]:
 
 
 def _joints(angles: dict[str, float]) -> dict[str, tuple[float, float, float, float]]:
-    return {name: _axis_angle((-1.0, 0.0, 0.0), angle) for name, angle in angles.items()}
+    # The illustrative mock joints are all G1 pitch/knee hinges. MuJoCo +Y
+    # axes map to Unity +X as axial vectors under the handedness reflection.
+    return {name: _axis_angle((1.0, 0.0, 0.0), angle) for name, angle in angles.items()}
 
 
 @dataclass
