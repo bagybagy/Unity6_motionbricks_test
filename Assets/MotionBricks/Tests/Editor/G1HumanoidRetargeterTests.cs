@@ -1,12 +1,42 @@
+using System.Collections;
 using System.Collections.Generic;
 using MotionBricks.Unity;
 using NUnit.Framework;
+using UnityEditor.SceneManagement;
 using UnityEngine;
+using UnityEngine.TestTools;
 
 namespace MotionBricks.Tests.Editor
 {
     public sealed class G1HumanoidRetargeterTests
     {
+        [UnityTest]
+        public IEnumerator SavedDemoScene_ShowsActiveUnityChanOnPlay()
+        {
+            EditorSceneManager.OpenScene("Assets/MotionBricks/Scenes/MotionBricksDemo.unity");
+            var savedModel = GameObject.Find("UnityChan Model");
+            var savedCamera = Object.FindFirstObjectByType<Camera>();
+            Assert.That(savedModel, Is.Not.Null);
+            Assert.That(savedCamera, Is.Not.Null);
+            var savedRenderers = savedModel.GetComponentsInChildren<Renderer>();
+            var frustum = GeometryUtility.CalculateFrustumPlanes(savedCamera);
+            Assert.That(System.Array.Exists(savedRenderers, renderer => GeometryUtility.TestPlanesAABB(frustum, renderer.bounds)), Is.True,
+                "Unity-chan is outside the saved demo camera view.");
+
+            yield return new EnterPlayMode();
+            for (var frame = 0; frame < 5; frame++) yield return null;
+            Assert.That(Application.isPlaying, Is.True);
+
+            var model = GameObject.Find("UnityChan Model");
+            Assert.That(model, Is.Not.Null, "The saved demo scene does not contain Unity-chan.");
+            Assert.That(Object.FindFirstObjectByType<G1HumanoidRetargeter>().IsHumanoidAvatarValid, Is.True);
+            var renderers = model.GetComponentsInChildren<Renderer>();
+            Assert.That(renderers, Is.Not.Empty, "Unity-chan has no active renderer.");
+            Assert.That(System.Array.Exists(renderers, renderer => renderer.enabled && renderer.gameObject.activeInHierarchy), Is.True);
+
+            yield return new ExitPlayMode();
+        }
+
         [Test]
         public void PoseController_DefaultsToPlayableWalkMode()
         {

@@ -25,14 +25,15 @@ namespace MotionBricks.Editor
             var humanoidPreview = new GameObject("Humanoid Retarget Preview");
             humanoidPreview.transform.position = new Vector3(2f, 0f, 0f);
             var previewRetargeter = humanoidPreview.AddComponent<G1HumanoidRetargeter>();
-            // The builder instantiates the official Unity-chan Humanoid on Play without
-            // serializing the model hierarchy into the demo scene.
-            var humanoidBuilder = humanoidPreview.AddComponent<SimpleHumanoidDemoBuilder>();
             var unityChanModel = AssetDatabase.LoadAssetAtPath<GameObject>(UnityChanModelPath);
-            if (unityChanModel != null)
-                humanoidBuilder.SetHumanoidPrefab(unityChanModel);
-            else
-                Debug.LogWarning($"Unity-chan model was not found at {UnityChanModelPath}; using the procedural Humanoid fallback.");
+            if (unityChanModel == null)
+                throw new System.IO.FileNotFoundException("Unity-chan model is required by the demo scene.", UnityChanModelPath);
+            var unityChanInstance = (GameObject)PrefabUtility.InstantiatePrefab(unityChanModel, scene);
+            unityChanInstance.name = "UnityChan Model";
+            unityChanInstance.transform.SetParent(humanoidPreview.transform, false);
+            unityChanInstance.transform.SetLocalPositionAndRotation(Vector3.zero, Quaternion.identity);
+            unityChanInstance.transform.localScale = Vector3.one;
+            previewRetargeter.SetAnimator(unityChanInstance.GetComponentInChildren<Animator>());
             // The UDP pose and joint-space preview both drive the valid side-by-side Avatar.
             udpClient.SetHumanoidRetargeter(previewRetargeter);
             player.GetComponent<MotionBricksPoseController>().SetHumanoidRetargeter(previewRetargeter);
