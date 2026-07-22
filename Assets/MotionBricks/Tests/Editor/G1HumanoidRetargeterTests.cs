@@ -73,6 +73,7 @@ namespace MotionBricks.Tests.Editor
             {
                 var retargeter = root.AddComponent<G1HumanoidRetargeter>();
                 var builder = root.AddComponent<SimpleHumanoidDemoBuilder>();
+                builder.UseProceduralFallback();
                 builder.Build();
                 Assert.That(retargeter.ApplyJointAngles(new Dictionary<string, float>
                 {
@@ -99,7 +100,9 @@ namespace MotionBricks.Tests.Editor
             {
                 root.transform.position = new Vector3(2f, 0f, 0f);
                 var retargeter = root.AddComponent<G1HumanoidRetargeter>();
-                root.AddComponent<SimpleHumanoidDemoBuilder>().Build();
+                var builder = root.AddComponent<SimpleHumanoidDemoBuilder>();
+                builder.UseProceduralFallback();
+                builder.Build();
                 retargeter.Apply(new PoseMessage
                 {
                     RootPosition = new[] { 1f, 0.75f, 3f },
@@ -108,6 +111,23 @@ namespace MotionBricks.Tests.Editor
                 });
 
                 Assert.That(root.transform.position, Is.EqualTo(new Vector3(3f, .75f, 3f)));
+            }
+            finally { Object.DestroyImmediate(root); }
+        }
+
+        [Test]
+        public void BundledUnityChan_CreatesValidExternalHumanoidAvatar()
+        {
+            var root = new GameObject("unity chan humanoid test");
+            try
+            {
+                var retargeter = root.AddComponent<G1HumanoidRetargeter>();
+                var builder = root.AddComponent<SimpleHumanoidDemoBuilder>();
+                builder.Build();
+                Assert.That(builder.UsesExternalHumanoid, Is.True);
+                Assert.That(builder.HasValidHumanoidAvatar, Is.True);
+                Assert.That(retargeter.IsHumanoidAvatarValid, Is.True);
+                Assert.That(root.transform.Find("UnityChan Model"), Is.Not.Null);
             }
             finally { Object.DestroyImmediate(root); }
         }

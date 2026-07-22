@@ -4,27 +4,39 @@ using UnityEngine;
 
 namespace MotionBricks.Unity
 {
-    /// <summary>Builds a small but genuine Humanoid Avatar for side-by-side G1 retarget preview.</summary>
+    /// <summary>Builds the side-by-side Humanoid retarget preview, with a procedural fallback for tests.</summary>
     [DisallowMultipleComponent]
     public sealed class SimpleHumanoidDemoBuilder : MonoBehaviour
     {
         [SerializeField] private G1HumanoidRetargeter retargeter;
+        [SerializeField] private GameObject humanoidPrefab;
         [SerializeField] private bool buildOnAwake = true;
         [SerializeField] private Color color = new(0.35f, 0.72f, 0.42f, 1f);
         private readonly Dictionary<string, Transform> bones = new(StringComparer.Ordinal);
+        private GameObject generatedModel;
+        private bool ownsAvatar;
+        private bool useProceduralFallback;
 
         public Animator Animator { get; private set; }
         public Avatar Avatar { get; private set; }
         public bool HasValidHumanoidAvatar => Avatar != null && Avatar.isHuman && Avatar.isValid;
+        public bool UsesExternalHumanoid => generatedModel != null;
+
+        public void SetHumanoidPrefab(GameObject value) => humanoidPrefab = value;
+        public void UseProceduralFallback() { useProceduralFallback = true; humanoidPrefab = null; }
 
         private void Awake() { if (buildOnAwake) Build(); }
 
         [ContextMenu("Build Simple Humanoid Demo")]
         public void Build()
         {
-            // Rebuilding must be synchronous: leaving the old Hips hierarchy alive until
-            // end-of-frame gives AvatarBuilder two bones with the same names.
+            // Rebuilding must be synchronous so duplicate bone names cannot leak into AvatarBuilder.
             ClearGenerated(immediate: true);
+            if (!useProceduralFallback)
+                humanoidPrefab ??= Resources.Load<GameObject>("UnityChan/unitychan");
+            if (humanoidPrefab != null && BuildExternalHumanoid())
+                return;
+
             var root = new GameObject("Hips").transform;
             root.SetParent(transform, false);
             bones["Hips"] = root;
@@ -50,6 +62,7 @@ namespace MotionBricks.Unity
             Add("RightToes", "RightFoot", new Vector3(0, 0, .19f));
 
             Avatar = AvatarBuilder.BuildHumanAvatar(gameObject, CreateDescription());
+            ownsAvatar = true;
             var animatorComponent = gameObject.GetComponent<Animator>();
             if (animatorComponent == null) animatorComponent = gameObject.AddComponent<Animator>();
             Animator = animatorComponent;
@@ -63,24 +76,54 @@ namespace MotionBricks.Unity
 
         private void OnDestroy()
         {
-            if (Avatar == null) return;
+            if (Avatar == null || !ownsAvatar) return;
             if (Application.isPlaying) Destroy(Avatar); else DestroyImmediate(Avatar);
             Avatar = null;
         }
 
         private void ClearGenerated(bool immediate)
         {
-            if (Avatar != null)
+            if (Avatar != null && ownsAvatar)
             {
                 if (immediate) DestroyImmediate(Avatar); else Destroy(Avatar);
             }
             Avatar = null;
+            ownsAvatar = false;
+            Animator = null;
             bones.Clear();
+            if (generatedModel != null)
+            {
+                if (immediate) DestroyImmediate(generatedModel); else Destroy(generatedModel);
+                generatedModel = null;
+            }
             var old = transform.Find("Hips");
             if (old != null)
             {
                 if (immediate) DestroyImmediate(old.gameObject); else Destroy(old.gameObject);
             }
+        }
+
+        private bool BuildExternalHumanoid()
+        {
+            generatedModel = Instantiate(humanoidPrefab, transform, false);
+            generatedModel.name = "UnityChan Model";
+            generatedModel.transform.SetLocalPositionAndRotation(Vector3.zero, Quaternion.identity);
+            generatedModel.transform.localScale = Vector3.one;
+            Animator = generatedModel.GetComponentInChildren<Animator>();
+            Avatar = Animator != null ? Animator.avatar : null;
+            if (!HasValidHumanoidAvatar)
+            {
+                DestroyImmediate(generatedModel);
+                generatedModel = null;
+                Animator = null;
+                Avatar = null;
+                return false;
+            }
+
+            Animator.applyRootMotion = false;
+            retargeter ??= GetComponent<G1HumanoidRetargeter>();
+            retargeter?.SetAnimator(Animator);
+            return true;
         }
 
         private void Add(string name, string parentName, Vector3 position)

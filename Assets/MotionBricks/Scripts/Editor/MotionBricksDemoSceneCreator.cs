@@ -9,6 +9,7 @@ namespace MotionBricks.Editor
     public static class MotionBricksDemoSceneCreator
     {
         public const string ScenePath = "Assets/MotionBricks/Scenes/MotionBricksDemo.unity";
+        public const string UnityChanModelPath = "Assets/MotionBricks/Resources/UnityChan/unitychan.fbx";
 
         [MenuItem("MotionBricks/Create or Reset Demo Scene")]
         public static void CreateOrResetDemoScene()
@@ -24,9 +25,14 @@ namespace MotionBricks.Editor
             var humanoidPreview = new GameObject("Humanoid Retarget Preview");
             humanoidPreview.transform.position = new Vector3(2f, 0f, 0f);
             var previewRetargeter = humanoidPreview.AddComponent<G1HumanoidRetargeter>();
-            // The builder creates its transient Avatar and visuals on Play;
-            // they are not serialized as thousands of generated scene lines.
-            humanoidPreview.AddComponent<SimpleHumanoidDemoBuilder>();
+            // The builder instantiates the official Unity-chan Humanoid on Play without
+            // serializing the model hierarchy into the demo scene.
+            var humanoidBuilder = humanoidPreview.AddComponent<SimpleHumanoidDemoBuilder>();
+            var unityChanModel = AssetDatabase.LoadAssetAtPath<GameObject>(UnityChanModelPath);
+            if (unityChanModel != null)
+                humanoidBuilder.SetHumanoidPrefab(unityChanModel);
+            else
+                Debug.LogWarning($"Unity-chan model was not found at {UnityChanModelPath}; using the procedural Humanoid fallback.");
             // The UDP pose and joint-space preview both drive the valid side-by-side Avatar.
             udpClient.SetHumanoidRetargeter(previewRetargeter);
             player.GetComponent<MotionBricksPoseController>().SetHumanoidRetargeter(previewRetargeter);

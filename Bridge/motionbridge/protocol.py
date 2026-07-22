@@ -10,6 +10,7 @@ from typing import Mapping, Sequence
 
 Quaternion = tuple[float, float, float, float]
 Vector3 = tuple[float, float, float]
+CLIENT_TIMEOUT_SECONDS = 0.75
 
 
 def _finite(value: object, field_name: str) -> float:
@@ -31,6 +32,7 @@ class ControlMessage:
     move_x: float
     move_y: float
     look_yaw: float
+    session_id: str = "legacy"
     style: str = "default"
     # Optional fixed goal supplied by newer Unity clients.  Keeping defaults
     # makes controls sent by the original WASD-only client valid.
@@ -42,6 +44,40 @@ class ControlMessage:
     has_pose_target: bool = False
     target_joint_angles: Mapping[str, float] = field(default_factory=dict)
     type: str = field(default="control", init=False)
+
+
+@dataclass(slots=True)
+class ControlSessionState:
+    """Accept ordered controls while treating each Unity Play as a new session."""
+
+    session_id: str | None = None
+    sequence: int = -1
+    last_received_at: float | None = None
+    active: bool = False
+
+    def receive(self, control: ControlMessage, now: float) -> tuple[bool, bool]:
+        expired = (
+            self.last_received_at is not None
+            and now - self.last_received_at > CLIENT_TIMEOUT_SECONDS
+        )
+        new_session = not self.active or expired or control.session_id != self.session_id
+        accepted = new_session or control.seq >= self.sequence
+        self.last_received_at = now
+        self.active = True
+        if accepted:
+            self.session_id = control.session_id
+            self.sequence = control.seq
+        return accepted, new_session
+
+    def is_active(self, now: float) -> bool:
+        if (
+            not self.active
+            or self.last_received_at is None
+            or now - self.last_received_at > CLIENT_TIMEOUT_SECONDS
+        ):
+            self.active = False
+            return False
+        return True
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,6 +104,9 @@ def decode_control(payload: bytes) -> ControlMessage:
     style = str(raw.get("style", "default")).strip() or "default"
     if len(style) > 64:
         raise ValueError("style is too long")
+    session_id = str(raw.get("session_id", "legacy")).strip() or "legacy"
+    if len(session_id) > 64:
+        raise ValueError("session_id is too long")
 
     has_target = bool(raw.get("has_target", False))
     raw_target_position = raw.get("target_position")
@@ -102,6 +141,7 @@ def decode_control(payload: bytes) -> ControlMessage:
         move_x=max(-1.0, min(1.0, _finite(raw.get("move_x", 0.0), "move_x"))),
         move_y=max(-1.0, min(1.0, _finite(raw.get("move_y", 0.0), "move_y"))),
         look_yaw=_finite(raw.get("look_yaw", 0.0), "look_yaw"),
+        session_id=session_id,
         style=style,
         has_target=has_target,
         target_position=target_position,

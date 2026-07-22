@@ -22,7 +22,7 @@ from motionbridge.pose_conversion import (
     unity_yaw_to_mujoco_heading,
 )
 from motionbridge.pose_constraints import HingeLimit, PoseTargetAdapter
-from motionbridge.protocol import ControlMessage, PoseMessage, decode_control, encode_pose
+from motionbridge.protocol import ControlMessage, ControlSessionState, PoseMessage, decode_control, encode_pose
 
 
 STYLE_ALIASES = {
@@ -122,7 +122,6 @@ class MotionBricksRuntime:
         self.clip_names = tuple(clip_holder_G1.CLIPS.keys())
         self.args = _model_args()
         self.demo = navigation_demo(self.args)
-        self.demo.full_agent.reset()
         self.joints = self._joint_specs()
         self.pose_targets = PoseTargetAdapter(
             self.demo.full_agent,
@@ -134,6 +133,11 @@ class MotionBricksRuntime:
             lambda: self.demo.mj_data.qpos,
         )
         self.sequence = 0
+        self.reset_session()
+
+    def reset_session(self) -> None:
+        """Reset generated motion state without reloading model weights."""
+        self.demo.full_agent.reset()
         self._last_target: tuple[float, float, float, float] | None = None
         self._last_mode: int | None = None
         self._last_target_arrived = True
@@ -381,7 +385,8 @@ def run(
     receiver.setblocking(False)
     sender = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     target = (unity_host, unity_port)
-    control = ControlMessage(seq=0, move_x=0.0, move_y=0.0, look_yaw=0.0)
+    control: ControlMessage | None = None
+    session = ControlSessionState()
     period = 1.0 / runtime.fps
 
     print(f"MotionBricks CUDA runtime ready at {runtime.fps:g} FPS")
@@ -396,12 +401,16 @@ def run(
                     break
                 try:
                     candidate = decode_control(payload)
-                    if candidate.seq >= control.seq:
+                    accepted, new_session = session.receive(candidate, time.monotonic())
+                    if accepted:
+                        if new_session:
+                            runtime.reset_session()
                         control = candidate
                 except (KeyError, TypeError, ValueError) as error:
                     print(f"Ignored invalid control message: {error}")
 
-            sender.sendto(encode_pose(runtime.next_pose(control)), target)
+            if control is not None and session.is_active(time.monotonic()):
+                sender.sendto(encode_pose(runtime.next_pose(control)), target)
             remaining = period - (time.perf_counter() - frame_start)
             if remaining > 0:
                 time.sleep(remaining)

@@ -41,12 +41,14 @@ namespace MotionBricks.Tests.Editor
         {
             var message = new ControlMessage
             {
+                SessionId = "play-session",
                 HasTarget = true,
                 TargetPosition = new[] { 1f, 2f, 3f },
                 TargetYaw = 135f,
             };
 
             Assert.That(message.HasTarget, Is.True);
+            Assert.That(message.SessionId, Is.EqualTo("play-session"));
             Assert.That(message.TargetPosition, Is.EqualTo(new[] { 1f, 2f, 3f }));
             Assert.That(message.TargetYaw, Is.EqualTo(135f));
         }
@@ -61,6 +63,22 @@ namespace MotionBricks.Tests.Editor
             };
             Assert.That(message.HasPoseTarget, Is.True);
             Assert.That(message.TargetJointAngles["left_knee_joint"], Is.EqualTo(0.75f));
+        }
+
+        [Test]
+        public void UdpClient_UsesOneNonEmptySessionAndIncreasingSequence()
+        {
+            var root = new GameObject("udp session test");
+            try
+            {
+                var client = root.AddComponent<MotionBricksUdpClient>();
+                var first = client.CreateControlMessage();
+                var second = client.CreateControlMessage();
+                Assert.That(first.SessionId, Is.Not.Empty);
+                Assert.That(second.SessionId, Is.EqualTo(first.SessionId));
+                Assert.That(second.Sequence, Is.GreaterThan(first.Sequence));
+            }
+            finally { Object.DestroyImmediate(root); }
         }
     }
 }

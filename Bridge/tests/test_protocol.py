@@ -5,7 +5,14 @@ from types import SimpleNamespace
 
 from mock_server import MockRuntime
 from motionbricks_server import MotionBricksRuntime, TARGET_CHANGE_DEBOUNCE_SECONDS
-from motionbridge.protocol import ControlMessage, PoseMessage, decode_control, encode_pose
+from motionbridge.protocol import (
+    CLIENT_TIMEOUT_SECONDS,
+    ControlMessage,
+    ControlSessionState,
+    PoseMessage,
+    decode_control,
+    encode_pose,
+)
 from motionbridge.pose_constraints import (
     HingeLimit,
     PoseTargetAdapter,
@@ -49,6 +56,44 @@ class ProtocolTests(unittest.TestCase):
         self.assertEqual(message.move_y, -1.0)
         self.assertEqual(message.style, "zombie")
         self.assertFalse(message.has_target)
+
+    def test_decode_control_reads_session_id_and_preserves_legacy_clients(self) -> None:
+        current = decode_control(
+            b'{"type":"control","session_id":"play-2","seq":1,'
+            b'"move_x":0,"move_y":0,"look_yaw":0}'
+        )
+        legacy = decode_control(
+            b'{"type":"control","seq":1,"move_x":0,"move_y":0,"look_yaw":0}'
+        )
+        self.assertEqual(current.session_id, "play-2")
+        self.assertEqual(legacy.session_id, "legacy")
+
+    def test_control_session_accepts_low_sequence_from_new_play_and_expires(self) -> None:
+        state = ControlSessionState()
+        first = ControlMessage(
+            session_id="play-1", seq=900, move_x=0.0, move_y=0.0, look_yaw=0.0
+        )
+        restarted = ControlMessage(
+            session_id="play-2", seq=1, move_x=0.0, move_y=0.0, look_yaw=0.0
+        )
+        self.assertEqual(state.receive(first, 10.0), (True, True))
+        self.assertEqual(state.receive(restarted, 10.1), (True, True))
+        self.assertTrue(state.is_active(10.1 + CLIENT_TIMEOUT_SECONDS))
+        self.assertFalse(state.is_active(10.11 + CLIENT_TIMEOUT_SECONDS))
+
+    def test_control_session_rejects_out_of_order_packet_within_same_play(self) -> None:
+        state = ControlSessionState()
+        state.receive(
+            ControlMessage(session_id="play", seq=5, move_x=0.0, move_y=0.0, look_yaw=0.0),
+            1.0,
+        )
+        accepted, new_session = state.receive(
+            ControlMessage(session_id="play", seq=4, move_x=1.0, move_y=0.0, look_yaw=0.0),
+            1.1,
+        )
+        self.assertFalse(accepted)
+        self.assertFalse(new_session)
+        self.assertEqual(state.sequence, 5)
 
     def test_decode_control_reads_optional_fixed_target(self) -> None:
         message = decode_control(

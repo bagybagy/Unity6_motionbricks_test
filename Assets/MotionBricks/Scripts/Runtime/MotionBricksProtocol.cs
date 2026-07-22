@@ -9,6 +9,7 @@ namespace MotionBricks.Unity
     public sealed class ControlMessage
     {
         [JsonProperty("type")] public string Type = "control";
+        [JsonProperty("session_id")] public string SessionId;
         [JsonProperty("seq")] public long Sequence;
         [JsonProperty("move_x")] public float MoveX;
         [JsonProperty("move_y")] public float MoveY;

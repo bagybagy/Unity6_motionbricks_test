@@ -36,6 +36,7 @@ namespace MotionBricks.Unity
         private UdpClient receiver;
         private IPEndPoint remoteEndpoint;
         private long controlSequence;
+        private string sessionId;
         private long receivedPoseCount;
         private float nextControlTime;
         private float accumulatedLookYaw;
@@ -108,6 +109,10 @@ namespace MotionBricks.Unity
                 return;
             try
             {
+                sessionId = Guid.NewGuid().ToString("N");
+                Interlocked.Exchange(ref controlSequence, 0);
+                nextControlTime = 0f;
+                while (receivedPoses.TryDequeue(out _)) { }
                 remoteEndpoint = new IPEndPoint(IPAddress.Parse(bridgeHost), controlPort);
                 sender = new UdpClient();
                 receiver = new UdpClient(posePort);
@@ -131,6 +136,7 @@ namespace MotionBricks.Unity
             sender = null;
             receiver?.Dispose();
             receiver = null;
+            while (receivedPoses.TryDequeue(out _)) { }
         }
 
         private void SendControls()
@@ -159,8 +165,10 @@ namespace MotionBricks.Unity
             var vertical = Application.isPlaying ? Input.GetAxisRaw("Vertical") : 0f;
             accumulatedLookYaw += mouseX * lookSensitivity;
             var hasTarget = targetController != null && targetController.HasTarget;
+            sessionId ??= Guid.NewGuid().ToString("N");
             return new ControlMessage
             {
+                SessionId = sessionId,
                 Sequence = Interlocked.Increment(ref controlSequence),
                 // Direct controls remain available until a user has placed a fixed target.
                 MoveX = hasTarget ? 0f : horizontal,

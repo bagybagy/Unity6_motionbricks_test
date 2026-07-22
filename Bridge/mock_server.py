@@ -8,7 +8,7 @@ import socket
 import time
 from dataclasses import dataclass, field
 
-from motionbridge.protocol import ControlMessage, PoseMessage, decode_control, encode_pose
+from motionbridge.protocol import ControlMessage, ControlSessionState, PoseMessage, decode_control, encode_pose
 
 
 def _axis_angle(axis: tuple[float, float, float], angle: float) -> tuple[float, float, float, float]:
@@ -105,7 +105,8 @@ def run(control_host: str, control_port: int, unity_host: str, unity_port: int, 
     receiver.setblocking(False)
     sender = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     target = (unity_host, unity_port)
-    control = ControlMessage(seq=0, move_x=0.0, move_y=0.0, look_yaw=0.0)
+    control: ControlMessage | None = None
+    session = ControlSessionState()
     period = 1.0 / fps
     sequence = 0
     runtime = MockRuntime()
@@ -122,14 +123,18 @@ def run(control_host: str, control_port: int, unity_host: str, unity_port: int, 
                     break
                 try:
                     candidate = decode_control(payload)
-                    if candidate.seq >= control.seq:
+                    accepted, new_session = session.receive(candidate, time.monotonic())
+                    if accepted:
+                        if new_session:
+                            runtime = MockRuntime()
                         control = candidate
                 except (KeyError, TypeError, ValueError) as error:
                     print(f"Ignored invalid control message: {error}")
 
-            sequence += 1
             now = time.monotonic()
-            sender.sendto(encode_pose(runtime.next_pose(control, now, sequence)), target)
+            if control is not None and session.is_active(now):
+                sequence += 1
+                sender.sendto(encode_pose(runtime.next_pose(control, now, sequence)), target)
             remaining = period - (time.perf_counter() - frame_start)
             if remaining > 0:
                 time.sleep(remaining)
