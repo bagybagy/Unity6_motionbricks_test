@@ -9,7 +9,7 @@ namespace MotionBricks.Tests.Editor
         [Test]
         public void PoseMessage_TryParse_ReadsRootAndJoints()
         {
-            const string json = "{\"type\":\"pose\",\"seq\":7,\"timestamp\":12.5,\"root_position\":[1,2,3],\"root_rotation\":[0,0,0,1],\"joints\":{\"hip\":[0,0.5,0,0.5]}}";
+            const string json = "{\"type\":\"pose\",\"seq\":7,\"timestamp\":12.5,\"root_position\":[1,2,3],\"root_rotation\":[0,0,0,1],\"joints\":{\"hip\":[0,0.5,0,0.5]},\"joint_angles\":{\"hip\":0.75}}";
 
             var parsed = PoseMessage.TryParse(json, out var pose);
 
@@ -17,6 +17,7 @@ namespace MotionBricks.Tests.Editor
             Assert.That(pose.Sequence, Is.EqualTo(7));
             Assert.That(pose.GetRootPosition(), Is.EqualTo(new Vector3(1, 2, 3)));
             Assert.That(pose.Joints["hip"], Has.Length.EqualTo(4));
+            Assert.That(pose.JointAngles["hip"], Is.EqualTo(.75f));
         }
 
         [Test]

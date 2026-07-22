@@ -90,13 +90,19 @@ namespace MotionBricks.Unity
 
         public void Apply(PoseMessage message)
         {
-            if (!applyReceivedPoses || message?.Joints == null) return;
+            if (!applyReceivedPoses || message == null) return;
             if (applyRootTransform && !comparisonOffsetCaptured) CaptureComparisonOffset();
-            var angles = new Dictionary<string, float>(StringComparer.Ordinal);
-            foreach (var (joint, rotation) in message.Joints)
+            IReadOnlyDictionary<string, float> angles = message.JointAngles;
+            if (angles == null || angles.Count == 0)
             {
-                if (rotation is not { Length: >= 4 }) continue;
-                angles[joint] = ExtractJointRadians(joint, new Quaternion(rotation[0], rotation[1], rotation[2], rotation[3]));
+                var extracted = new Dictionary<string, float>(StringComparer.Ordinal);
+                if (message.Joints != null)
+                    foreach (var (joint, rotation) in message.Joints)
+                    {
+                        if (rotation is not { Length: >= 4 }) continue;
+                        extracted[joint] = ExtractJointRadians(joint, new Quaternion(rotation[0], rotation[1], rotation[2], rotation[3]));
+                    }
+                angles = extracted;
             }
             ApplyJointAngles(angles);
             if (applyRootTransform && message.RootPosition is { Length: >= 3 })

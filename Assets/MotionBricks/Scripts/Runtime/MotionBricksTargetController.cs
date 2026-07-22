@@ -17,7 +17,7 @@ namespace MotionBricks.Unity
 
         private void Update()
         {
-            if (Input.GetMouseButtonDown(0) && TryGetGroundPoint(out var point))
+            if (Input.GetMouseButtonDown(0) && (!HasTarget || !PointerIsOverControls()) && TryGetGroundPoint(out var point))
             {
                 SetTarget(point, TargetYaw);
             }
@@ -48,7 +48,15 @@ namespace MotionBricks.Unity
             HasTarget = true;
         }
 
+        public void SetTargetYaw(float yawDegrees) => TargetYaw = Mathf.Repeat(yawDegrees, 360f);
+
         public void ClearTarget() => HasTarget = false;
+
+        private static bool PointerIsOverControls()
+        {
+            var pointer = Input.mousePosition;
+            return new Rect(12f, 12f, 520f, 156f).Contains(new Vector2(pointer.x, Screen.height - pointer.y));
+        }
 
         private bool TryGetGroundPoint(out Vector3 point)
         {

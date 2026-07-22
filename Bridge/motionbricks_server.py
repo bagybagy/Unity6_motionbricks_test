@@ -267,6 +267,9 @@ class MotionBricksRuntime:
             for spec in self.joints
         }
 
+    def _joint_angles(self, qpos: Sequence[float]) -> dict[str, float]:
+        return {spec.name: float(qpos[spec.qpos_address]) for spec in self.joints}
+
     def _generated_plan(self) -> tuple[tuple[tuple[float, ...], ...], Sequence[float]]:
         """Return a compact Unity-space preview and the generated terminal qpos."""
         frames = self.demo.full_agent.frames["mujoco_qpos"][0]
@@ -366,6 +369,7 @@ class MotionBricksRuntime:
             root_position=mujoco_position_to_unity(qpos[0:3]),
             root_rotation=mujoco_root_quaternion_to_unity(qpos[3:7]),
             joints=self._joint_rotations(qpos),
+            joint_angles=self._joint_angles(qpos),
             plan_root_positions=plan_root_positions,
             goal_root_position=mujoco_position_to_unity(goal_qpos[0:3]),
             goal_root_rotation=mujoco_root_quaternion_to_unity(goal_qpos[3:7]),

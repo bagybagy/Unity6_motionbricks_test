@@ -51,6 +51,12 @@ namespace MotionBricks.Unity
         /// <summary>Caches the latest bridge pose so Capture Current works without an Avatar.</summary>
         public void RecordReceivedPose(PoseMessage message)
         {
+            if (message?.JointAngles is { Count: > 0 })
+            {
+                foreach (var (joint, angle) in message.JointAngles)
+                    latestReceivedJointAngles[joint] = angle;
+                return;
+            }
             if (message?.Joints == null) return;
             foreach (var (joint, rotation) in message.Joints)
                 if (rotation is { Length: >= 4 })

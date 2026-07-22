@@ -87,6 +87,9 @@ class PoseMessage:
     root_position: Vector3
     root_rotation: Quaternion
     joints: Mapping[str, Quaternion]
+    # Exact MuJoCo hinge values. Unity Humanoid retargeting must use these
+    # instead of reconstructing angles from coordinate-converted quaternions.
+    joint_angles: Mapping[str, float] = field(default_factory=dict)
     # The generated buffer is deliberately sampled, so it is small enough for
     # UDP while still showing the motion plan in Unity.
     plan_root_positions: tuple[Vector3, ...] = ()
@@ -158,6 +161,10 @@ def encode_pose(message: PoseMessage) -> bytes:
         str(name): _vector(rotation, 4, f"joints.{name}")
         for name, rotation in message.joints.items()
     }
+    joint_angles = {
+        str(name): _finite(angle, f"joint_angles.{name}")
+        for name, angle in message.joint_angles.items()
+    }
     plan_root_positions = [
         _vector(position, 3, "plan_root_positions") for position in message.plan_root_positions
     ]
@@ -171,6 +178,7 @@ def encode_pose(message: PoseMessage) -> bytes:
     payload["root_position"] = root_position
     payload["root_rotation"] = root_rotation
     payload["joints"] = joints
+    payload["joint_angles"] = joint_angles
     payload["plan_root_positions"] = plan_root_positions
     payload["goal_root_position"] = goal_root_position
     payload["goal_root_rotation"] = goal_root_rotation

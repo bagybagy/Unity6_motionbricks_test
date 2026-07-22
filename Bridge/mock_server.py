@@ -17,18 +17,22 @@ def _axis_angle(axis: tuple[float, float, float], angle: float) -> tuple[float, 
     return axis[0] * scale, axis[1] * scale, axis[2] * scale, math.cos(half)
 
 
-def _joints(phase: float, speed: float) -> dict[str, tuple[float, float, float, float]]:
+def _joint_angles(phase: float, speed: float) -> dict[str, float]:
     stride = math.sin(phase) * speed * 0.45
     knee = max(0.0, math.sin(phase)) * speed * 0.7
     opposite_knee = max(0.0, -math.sin(phase)) * speed * 0.7
     return {
-        "left_hip_pitch_joint": _axis_angle((-1.0, 0.0, 0.0), stride),
-        "right_hip_pitch_joint": _axis_angle((-1.0, 0.0, 0.0), -stride),
-        "left_knee_joint": _axis_angle((-1.0, 0.0, 0.0), knee),
-        "right_knee_joint": _axis_angle((-1.0, 0.0, 0.0), opposite_knee),
-        "left_shoulder_pitch_joint": _axis_angle((-1.0, 0.0, 0.0), -stride * 0.7),
-        "right_shoulder_pitch_joint": _axis_angle((-1.0, 0.0, 0.0), stride * 0.7),
+        "left_hip_pitch_joint": stride,
+        "right_hip_pitch_joint": -stride,
+        "left_knee_joint": knee,
+        "right_knee_joint": opposite_knee,
+        "left_shoulder_pitch_joint": -stride * 0.7,
+        "right_shoulder_pitch_joint": stride * 0.7,
     }
+
+
+def _joints(angles: dict[str, float]) -> dict[str, tuple[float, float, float, float]]:
+    return {name: _axis_angle((-1.0, 0.0, 0.0), angle) for name, angle in angles.items()}
 
 
 @dataclass
@@ -64,7 +68,8 @@ class MockRuntime:
             )
 
         phase = now * (2.0 + speed * 5.0)
-        joints = _joints(phase, speed)
+        joint_angles = _joint_angles(phase, speed)
+        joints = _joints(joint_angles)
         yaw = math.radians(yaw_degrees)
         goal_yaw = math.radians(control.target_yaw if target is not None else control.look_yaw)
         # A small, evenly spaced preview makes the mock usable by the exact
@@ -74,19 +79,21 @@ class MockRuntime:
                   for axis in range(3))
             for i in range(8)
         )
-        goal_joints = _joints(phase + 1.0, 0.0 if target is not None else speed)
+        goal_joint_angles = _joint_angles(phase + 1.0, 0.0 if target is not None else speed)
         if control.has_pose_target:
             # The mock exposes only its six illustrative hinges; unknown G1
             # names are ignored just as the CUDA runtime ignores unknown MJCF joints.
             for name, angle in control.target_joint_angles.items():
-                if name in goal_joints:
-                    goal_joints[name] = _axis_angle((-1.0, 0.0, 0.0), angle)
+                if name in goal_joint_angles:
+                    goal_joint_angles[name] = angle
+        goal_joints = _joints(goal_joint_angles)
         return PoseMessage(
             seq=seq,
             timestamp=now,
             root_position=tuple(self.root_position),
             root_rotation=_axis_angle((0.0, 1.0, 0.0), yaw),
             joints=joints,
+            joint_angles=joint_angles,
             plan_root_positions=plan,
             goal_root_position=goal_position,
             goal_root_rotation=_axis_angle((0.0, 1.0, 0.0), goal_yaw),

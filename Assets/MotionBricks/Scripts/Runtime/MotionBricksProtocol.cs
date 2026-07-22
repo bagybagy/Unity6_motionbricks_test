@@ -33,6 +33,7 @@ namespace MotionBricks.Unity
         [JsonProperty("root_position")] public float[] RootPosition;
         [JsonProperty("root_rotation")] public float[] RootRotation;
         [JsonProperty("joints")] public Dictionary<string, float[]> Joints;
+        [JsonProperty("joint_angles")] public Dictionary<string, float> JointAngles;
         [JsonProperty("plan_root_positions")] public float[][] PlanRootPositions;
         [JsonProperty("goal_root_position")] public float[] GoalRootPosition;
         [JsonProperty("goal_root_rotation")] public float[] GoalRootRotation;

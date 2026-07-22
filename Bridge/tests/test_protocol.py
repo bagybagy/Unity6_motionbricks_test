@@ -138,6 +138,7 @@ class ProtocolTests(unittest.TestCase):
                 root_position=(1.0, 2.0, 3.0),
                 root_rotation=(0.0, 0.0, 0.0, 1.0),
                 joints={"left_knee_joint": (0.1, 0.2, 0.3, 0.9)},
+                joint_angles={"left_knee_joint": 0.75},
                 plan_root_positions=((1.0, 2.0, 3.0), (4.0, 5.0, 6.0)),
                 goal_root_position=(4.0, 5.0, 6.0),
                 goal_root_rotation=(0.0, 1.0, 0.0, 0.0),
@@ -148,6 +149,7 @@ class ProtocolTests(unittest.TestCase):
         self.assertEqual(decoded["type"], "pose")
         self.assertEqual(decoded["root_rotation"], [0.0, 0.0, 0.0, 1.0])
         self.assertEqual(decoded["joints"]["left_knee_joint"], [0.1, 0.2, 0.3, 0.9])
+        self.assertEqual(decoded["joint_angles"]["left_knee_joint"], 0.75)
         self.assertEqual(decoded["plan_root_positions"], [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
         self.assertEqual(decoded["goal_root_position"], [4.0, 5.0, 6.0])
         self.assertEqual(decoded["goal_joints"]["left_knee_joint"], [0.0, 0.0, 0.0, 1.0])

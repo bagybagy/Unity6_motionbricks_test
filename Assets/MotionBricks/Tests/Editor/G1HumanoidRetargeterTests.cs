@@ -146,6 +146,55 @@ namespace MotionBricks.Tests.Editor
         }
 
         [Test]
+        public void Apply_PrefersExactJointAnglesOverConvertedQuaternionAxes()
+        {
+            var root = new GameObject("exact humanoid angle test");
+            try
+            {
+                var retargeter = root.AddComponent<G1HumanoidRetargeter>();
+                var builder = root.AddComponent<SimpleHumanoidDemoBuilder>();
+                builder.Build();
+                var binding = System.Array.Find(G1HumanoidRetargeter.DefaultBindings,
+                    item => item.jointName == "left_knee_joint");
+                retargeter.Apply(new PoseMessage
+                {
+                    Joints = new Dictionary<string, float[]>
+                    {
+                        ["left_knee_joint"] = new[] { -1f, 0f, 0f, 0f },
+                    },
+                    JointAngles = new Dictionary<string, float>
+                    {
+                        ["left_knee_joint"] = .5f,
+                    },
+                });
+
+                using var handler = new HumanPoseHandler(builder.Avatar, builder.Animator.transform);
+                var pose = new HumanPose();
+                handler.GetHumanPose(ref pose);
+                var muscleIndex = System.Array.IndexOf(HumanTrait.MuscleName, binding.muscleName);
+                Assert.That(pose.muscles[muscleIndex],
+                    Is.EqualTo(G1HumanoidRetargeter.JointRadiansToMuscle(.5f, binding)).Within(.001f));
+            }
+            finally { Object.DestroyImmediate(root); }
+        }
+
+        [Test]
+        public void TargetYaw_CanTurnAroundAndWrap()
+        {
+            var root = new GameObject("target yaw test");
+            try
+            {
+                var target = root.AddComponent<MotionBricksTargetController>();
+                target.SetTarget(Vector3.zero, 0f);
+                target.SetTargetYaw(target.TargetYaw + 180f);
+                Assert.That(target.TargetYaw, Is.EqualTo(180f));
+                target.SetTargetYaw(450f);
+                Assert.That(target.TargetYaw, Is.EqualTo(90f));
+            }
+            finally { Object.DestroyImmediate(root); }
+        }
+
+        [Test]
         public void BundledUnityChan_CreatesValidExternalHumanoidAvatar()
         {
             var root = new GameObject("unity chan humanoid test");
