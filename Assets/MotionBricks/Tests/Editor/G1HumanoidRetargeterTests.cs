@@ -8,6 +8,19 @@ namespace MotionBricks.Tests.Editor
     public sealed class G1HumanoidRetargeterTests
     {
         [Test]
+        public void PoseController_DefaultsToPlayableWalkMode()
+        {
+            var root = new GameObject("pose controller default test");
+            try
+            {
+                var controller = root.AddComponent<MotionBricksPoseController>();
+                Assert.That(controller.SelectedMode, Is.EqualTo("walk"));
+                Assert.That(MotionBricksPoseController.OfficialModes, Has.Length.EqualTo(15));
+            }
+            finally { Object.DestroyImmediate(root); }
+        }
+
+        [Test]
         public void DefaultBindings_CoverAll29OfficialG1Axes()
         {
             Assert.That(G1HumanoidRetargeter.DefaultBindings, Has.Length.EqualTo(G1DemoRigBuilder.JointCount));

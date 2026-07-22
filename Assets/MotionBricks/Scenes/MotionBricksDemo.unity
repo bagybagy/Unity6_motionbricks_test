@@ -501,7 +501,7 @@ MonoBehaviour:
   humanoidRetargeter: {fileID: 639425184}
   showPanel: 1
   hasPoseTarget: 0
-  selectedMode: idle
+  selectedMode: walk
 --- !u!114 &1853158544
 MonoBehaviour:
   m_ObjectHideFlags: 0

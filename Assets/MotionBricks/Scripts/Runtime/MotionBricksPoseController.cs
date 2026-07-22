@@ -13,7 +13,9 @@ namespace MotionBricks.Unity
         [SerializeField] private G1HumanoidRetargeter humanoidRetargeter;
         [SerializeField] private bool showPanel = true;
         [SerializeField] private bool hasPoseTarget;
-        [SerializeField] private string selectedMode = "idle";
+        // Preserve the original playable behavior: WASD starts in normal walk.
+        // Users can still select explicit idle with F1 or the panel.
+        [SerializeField] private string selectedMode = "walk";
         private readonly Dictionary<string, float> targetJointAngles = new(StringComparer.Ordinal);
         private readonly Dictionary<string, float> latestReceivedJointAngles = new(StringComparer.Ordinal);
         private Vector2 scroll;
